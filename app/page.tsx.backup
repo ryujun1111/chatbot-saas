@@ -1,0 +1,410 @@
+import Link from 'next/link';
+import { Button } from '@/components/ui';
+import { 
+  Sparkles, 
+  Zap, 
+  MessageSquare, 
+  CheckCircle, 
+  ArrowRight,
+  Clock,
+  Bot,
+  HeadphonesIcon,
+  FileText,
+  Globe,
+  Shield
+} from 'lucide-react';
+
+export default function Home() {
+  return (
+    <div className="min-h-screen">
+      {/* Navigation */}
+      <nav className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container-custom py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="w-8 h-8 text-primary-600" />
+              <span className="text-2xl font-display font-bold gradient-text">ChatBot AI</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link href="/login">
+                <Button variant="ghost">Log In</Button>
+              </Link>
+              <Link href="/signup">
+                <Button variant="primary" icon={ArrowRight} iconPosition="right">
+                  Get Started
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main>
+        {/* Hero Section */}
+        <section className="gradient-bg section relative overflow-hidden">
+          <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+          <div className="container-custom relative">
+            <div className="max-w-4xl mx-auto text-center animate-fade-in">
+              <div className="inline-flex items-center gap-2 bg-primary-100 text-primary-700 px-4 py-2 rounded-full mb-8 animate-slide-down">
+                <Sparkles className="w-4 h-4" />
+                <span className="text-sm font-medium">AI-Powered Customer Support</span>
+              </div>
+              
+              <h1 className="mb-6 animate-slide-up">
+                Build AI Chatbots <br />
+                <span className="gradient-text">For Your Website</span>
+              </h1>
+              
+              <p className="text-xl md:text-2xl text-gray-600 mb-10 max-w-2xl mx-auto animate-slide-up" style={{animationDelay: '0.1s'}}>
+                Affordable alternative to Chatbase. Same GPT-4 power, half the price.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-slide-up" style={{animationDelay: '0.2s'}}>
+                <Link href="/try">
+                  <Button size="lg" icon={Zap} iconPosition="left">
+                    Try It Now - No Signup
+                  </Button>
+                </Link>
+                <a href="#pricing">
+                  <Button variant="secondary" size="lg">
+                    See Pricing
+                  </Button>
+                </a>
+              </div>
+
+              <div className="flex flex-wrap gap-6 justify-center text-sm text-gray-600 animate-fade-in" style={{animationDelay: '0.3s'}}>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-success-600" />
+                  <span>No signup required</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-success-600" />
+                  <span>No credit card</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-success-600" />
+                  <span>Ready in 2 minutes</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="section bg-white">
+          <div className="container-custom">
+            <div className="text-center mb-16">
+              <h2 className="mb-4">Powerful Features</h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                Everything you need to provide exceptional customer support with AI
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Zap className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">Quick Setup</h3>
+                <p className="text-gray-600">
+                  Upload your documents and launch your chatbot in under 5 minutes
+                </p>
+              </div>
+
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Bot className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">AI-Powered</h3>
+                <p className="text-gray-600">
+                  Powered by GPT-4 for accurate, natural conversations
+                </p>
+              </div>
+
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <MessageSquare className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">24/7 Support</h3>
+                <p className="text-gray-600">
+                  Answer customer questions instantly, any time of day
+                </p>
+              </div>
+
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Globe className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">Multi-Language</h3>
+                <p className="text-gray-600">
+                  Support customers in their native language automatically
+                </p>
+              </div>
+
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Shield className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">Secure & Private</h3>
+                <p className="text-gray-600">
+                  Your data is encrypted and stored securely
+                </p>
+              </div>
+
+              <div className="card card-hover group">
+                <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <FileText className="w-7 h-7 text-primary-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">Easy Integration</h3>
+                <p className="text-gray-600">
+                  Embed on any website with a simple script tag
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Price Comparison Section */}
+        <section className="section gradient-bg">
+          <div className="container-custom">
+            <div className="max-w-4xl mx-auto">
+              <div className="text-center mb-12">
+                <h2 className="mb-4">Why Pay More?</h2>
+                <p className="text-xl text-gray-600">
+                  Get the same powerful AI features at half the price
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-large p-8 md:p-12">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center mb-8">
+                  <div className="text-center p-6 bg-gray-50 rounded-xl">
+                    <div className="text-sm text-gray-600 mb-2 font-medium">Chatbase</div>
+                    <div className="text-5xl font-bold text-gray-400 line-through mb-1">$40</div>
+                    <div className="text-sm text-gray-500">/month</div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-6xl font-bold gradient-text">VS</div>
+                  </div>
+                  
+                  <div className="text-center p-6 bg-gradient-to-br from-primary-50 to-primary-100 rounded-xl border-2 border-primary-500">
+                    <div className="text-sm text-primary-700 font-semibold mb-2">ChatBot AI</div>
+                    <div className="text-5xl font-bold text-primary-600 mb-1">$19</div>
+                    <div className="text-sm text-primary-600">/month</div>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-3 bg-success-100 border-2 border-success-500 rounded-full px-8 py-4">
+                    <CheckCircle className="w-6 h-6 text-success-600" />
+                    <span className="text-2xl font-bold text-success-700">Save $252/year</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+
+
+        {/* Pricing Section */}
+        <section id="pricing" className="section bg-white">
+          <div className="container-custom">
+            <div className="text-center mb-16">
+              <h2 className="mb-4">Simple Pricing</h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                Start free, upgrade when you need. No hidden fees.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+              {/* Starter Plan */}
+              <div className="card border-2 border-gray-200 hover:border-primary-300 transition-colors">
+                <div className="mb-6">
+                  <h3 className="text-2xl font-semibold mb-2">Starter</h3>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-5xl font-bold text-gray-900">$19</span>
+                    <span className="text-gray-600">/month</span>
+                  </div>
+                </div>
+                
+                <ul className="space-y-4 mb-8">
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">100 messages/month</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">1 chatbot</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">Email support</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">GPT-4 powered</span>
+                  </li>
+                </ul>
+                
+                <Link href="/signup">
+                  <Button variant="secondary" className="w-full">
+                    Get Started
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Growth Plan - Popular */}
+              <div className="card border-2 border-primary-600 relative shadow-large scale-105">
+                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-primary-600 text-white px-6 py-1 rounded-full text-sm font-semibold">
+                  Most Popular
+                </div>
+                
+                <div className="mb-6">
+                  <h3 className="text-2xl font-semibold mb-2">Growth</h3>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-5xl font-bold gradient-text">$49</span>
+                    <span className="text-gray-600">/month</span>
+                  </div>
+                </div>
+                
+                <ul className="space-y-4 mb-8">
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">1,000 messages/month</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">5 chatbots</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">Priority support</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">Custom branding</span>
+                  </li>
+                </ul>
+                
+                <Link href="/signup">
+                  <Button variant="primary" className="w-full">
+                    Get Started
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Pro Plan */}
+              <div className="card border-2 border-gray-200 hover:border-primary-300 transition-colors">
+                <div className="mb-6">
+                  <h3 className="text-2xl font-semibold mb-2">Pro</h3>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-5xl font-bold text-gray-900">$99</span>
+                    <span className="text-gray-600">/month</span>
+                  </div>
+                </div>
+                
+                <ul className="space-y-4 mb-8">
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">Unlimited messages</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">Unlimited chatbots</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">24/7 support</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <span className="text-gray-700">White label</span>
+                  </li>
+                </ul>
+                
+                <Link href="/signup">
+                  <Button variant="secondary" className="w-full">
+                    Get Started
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="section gradient-bg">
+          <div className="container-custom">
+            <div className="max-w-4xl mx-auto text-center">
+              <h2 className="mb-6">Ready to Get Started?</h2>
+              <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
+                Join thousands of businesses using AI chatbots to improve customer support
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/try">
+                  <Button size="lg" icon={Zap}>
+                    Try It Free
+                  </Button>
+                </Link>
+                <Link href="/signup">
+                  <Button variant="secondary" size="lg" icon={ArrowRight} iconPosition="right">
+                    Sign Up Now
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="bg-gray-900 text-gray-300 py-12">
+          <div className="container-custom">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Bot className="w-6 h-6 text-primary-400" />
+                  <span className="text-xl font-display font-bold text-white">ChatBot AI</span>
+                </div>
+                <p className="text-gray-400 text-sm">
+                  Build AI chatbots for your website in minutes.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="text-white font-semibold mb-4">Product</h4>
+                <ul className="space-y-2 text-sm">
+                  <li><a href="#" className="hover:text-white transition">Features</a></li>
+                  <li><a href="#pricing" className="hover:text-white transition">Pricing</a></li>
+                  <li><a href="#" className="hover:text-white transition">Documentation</a></li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="text-white font-semibold mb-4">Company</h4>
+                <ul className="space-y-2 text-sm">
+                  <li><a href="#" className="hover:text-white transition">About</a></li>
+                  <li><a href="#" className="hover:text-white transition">Blog</a></li>
+                  <li><a href="#" className="hover:text-white transition">Contact</a></li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="text-white font-semibold mb-4">Legal</h4>
+                <ul className="space-y-2 text-sm">
+                  <li><a href="#" className="hover:text-white transition">Privacy</a></li>
+                  <li><a href="#" className="hover:text-white transition">Terms</a></li>
+                  <li><a href="#" className="hover:text-white transition">Security</a></li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="border-t border-gray-800 pt-8 text-center text-sm text-gray-400">
+              <p>© 2024 ChatBot AI. All rights reserved.</p>
+            </div>
+          </div>
+        </footer>
+      </main>
+    </div>
+  );
+}
