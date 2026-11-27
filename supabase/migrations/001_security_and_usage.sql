@@ -9,7 +9,7 @@ ALTER TABLE users
 ADD COLUMN IF NOT EXISTS message_limit INTEGER DEFAULT 5,
 ADD COLUMN IF NOT EXISTS messages_used INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS paddle_transaction_id TEXT,
-ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT ''active'',
+ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active',
 ADD COLUMN IF NOT EXISTS subscription_started_at TIMESTAMPTZ;
 
 -- Create index for faster queries
@@ -77,7 +77,7 @@ BEGIN
   UPDATE users
   SET messages_used = 0,
       updated_at = NOW()
-  WHERE subscription_status = ''active'';
+  WHERE subscription_status = 'active';
 END;
 $$;
 
@@ -145,7 +145,7 @@ CREATE POLICY "Users can insert own documents"
 -- Webhook events: Service role only
 CREATE POLICY "Service role can manage webhook events"
   ON webhook_events FOR ALL
-  USING (auth.role() = ''service_role'');
+  USING (auth.role() = 'service_role');
 
 -- Rate limits: Public can read own session
 CREATE POLICY "Public can view own rate limit"
@@ -159,3 +159,4 @@ CREATE POLICY "Public can view own rate limit"
 COMMENT ON FUNCTION reset_monthly_usage() IS 
   'Should be called monthly via pg_cron or external scheduler. 
    Example cron: 0 0 1 * * (1st day of month at midnight)';
+

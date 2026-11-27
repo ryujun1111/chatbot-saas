@@ -7,7 +7,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Verify Paddle webhook signature with timestamp validation
 function verifyPaddleSignature(
   rawBody: string,
   signature: string | null,
@@ -25,7 +24,7 @@ function verifyPaddleSignature(
 
     if (!ts || !h1) return false;
 
-    // Timestamp validation (reject if older than 5 minutes)
+    // Timestamp validation (5-minute window)
     const timestampMs = parseInt(ts) * 1000;
     const now = Date.now();
     const fiveMinutes = 5 * 60 * 1000;
@@ -78,7 +77,7 @@ export async function POST(request: NextRequest) {
     const eventType = body.event_type;
     const eventId = body.event_id;
 
-    // 2. Duplicate event prevention (Supabase-based)
+    // 2. Duplicate prevention (atomic)
     const { data: existingEvent } = await supabase
       .from('webhook_events')
       .select('id')
@@ -122,9 +121,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Price ID mapping
+      // Price mapping
       const planMapping: { [key: string]: { plan: string; limit: number } } = {
-        'pri_01m8e8kf7avdg06xcvncdta4yb': { plan: 'free', limit: 5 },
+        'pri_01m8e8kf7avdg06xcvncdta4yb': { plan: 'free', limit: 50 },
         'pri_01m8eax50k2g8d2vehcgn1mj65': { plan: 'starter', limit: 1000 },
         'pri_01m8eazgazbyfte6yf01fqc0cm': { plan: 'growth', limit: 5000 },
         'pri_01m8eaycmq165jtnm6mjfem77s': { plan: 'agency', limit: 15000 }
@@ -139,13 +138,13 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Update user (atomic transaction)
+      // Atomic transaction: update user + record event
       const { error: updateError } = await supabase
         .from('users')
         .update({
           plan: planConfig.plan,
           message_limit: planConfig.limit,
-          messages_used: 0, // Reset usage on new subscription
+          messages_used: 0,
           paddle_transaction_id: transactionId,
           subscription_status: 'active',
           subscription_started_at: new Date().toISOString(),
@@ -161,7 +160,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Record event as processed
+      // Record event
       await supabase
         .from('webhook_events')
         .insert({ 
@@ -173,7 +172,7 @@ export async function POST(request: NextRequest) {
       console.log(`User ${user.id} upgraded to ${planConfig.plan}`);
     }
 
-    // 4. Handle subscription.canceled
+    // 4. Handle subscription.canceled (downgrade to free, still usable)
     else if (eventType === 'subscription.canceled') {
       const subscription = body.data;
       const customerId = subscription.customer_id;
@@ -181,17 +180,17 @@ export async function POST(request: NextRequest) {
       const { error } = await supabase
         .from('users')
         .update({
-          subscription_status: 'canceled',
+          subscription_status: 'active', // Keep active but downgrade plan
           plan: 'free',
-          message_limit: 5,
+          message_limit: 50,
           updated_at: new Date().toISOString()
         })
         .eq('paddle_customer_id', customerId);
 
       if (error) {
-        console.error('Failed to cancel subscription:', error);
+        console.error('Failed to downgrade subscription:', error);
         return NextResponse.json(
-          { error: 'Failed to cancel subscription' },
+          { error: 'Failed to downgrade subscription' },
           { status: 500 }
         );
       }
@@ -204,7 +203,7 @@ export async function POST(request: NextRequest) {
           processed_at: new Date().toISOString()
         });
 
-      console.log(`Subscription canceled for ${customerId}`);
+      console.log(`Subscription canceled, downgraded to free: ${customerId}`);
     }
 
     // 5. Handle subscription.updated
@@ -214,7 +213,7 @@ export async function POST(request: NextRequest) {
       const newPriceId = subscription.items?.[0]?.price?.id;
 
       const planMapping: { [key: string]: { plan: string; limit: number } } = {
-        'pri_01m8e8kf7avdg06xcvncdta4yb': { plan: 'free', limit: 5 },
+        'pri_01m8e8kf7avdg06xcvncdta4yb': { plan: 'free', limit: 50 },
         'pri_01m8eax50k2g8d2vehcgn1mj65': { plan: 'starter', limit: 1000 },
         'pri_01m8eazgazbyfte6yf01fqc0cm': { plan: 'growth', limit: 5000 },
         'pri_01m8eaycmq165jtnm6mjfem77s': { plan: 'agency', limit: 15000 }
@@ -251,7 +250,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. Handle transaction.payment_failed
+    // 6. Handle payment failure (block access)
     else if (eventType === 'transaction.payment_failed') {
       const transaction = body.data;
       const customerId = transaction.customer_id;
@@ -260,6 +259,8 @@ export async function POST(request: NextRequest) {
         .from('users')
         .update({
           subscription_status: 'payment_failed',
+          plan: 'free',
+          message_limit: 50,
           updated_at: new Date().toISOString()
         })
         .eq('paddle_customer_id', customerId);
@@ -276,7 +277,7 @@ export async function POST(request: NextRequest) {
           processed_at: new Date().toISOString()
         });
 
-      console.log(`Payment failed for ${customerId}`);
+      console.log(`Payment failed, downgraded to free: ${customerId}`);
     }
 
     return NextResponse.json({ received: true });
