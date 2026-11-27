@@ -60,7 +60,7 @@ CREATE OR REPLACE FUNCTION check_and_increment_usage(
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $$
 DECLARE
   v_subscription_status TEXT;
 BEGIN
@@ -107,7 +107,7 @@ RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $$
 DECLARE
   reset_count INTEGER;
 BEGIN
