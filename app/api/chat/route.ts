@@ -28,11 +28,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Rate limiting FIRST (before any usage increment)
-    if (sessionId) {
+    const rateLimitKey = sessionId || request.headers.get('x-forwarded-for') || 'unknown';
+    
+    if (rateLimitKey) {
       const { data: rateLimitData, error: rateLimitError } = await supabaseAdmin
         .from('rate_limits')
         .select('count, reset_at')
-        .eq('session_id', sessionId)
+        .eq('session_id', rateLimitKey)
         .single()
 
       const now = Date.now()
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
           const { error: updateError } = await supabaseAdmin
             .from('rate_limits')
             .update({ count: rateLimitData.count + 1 })
-            .eq('session_id', sessionId)
+            .eq('session_id', rateLimitKey)
           
           if (updateError) {
             console.error('Rate limit update failed:', updateError)
@@ -64,13 +66,13 @@ export async function POST(request: NextRequest) {
           await supabaseAdmin
             .from('rate_limits')
             .update({ count: 1, reset_at: new Date(now + 60000).toISOString() })
-            .eq('session_id', sessionId)
+            .eq('session_id', rateLimitKey)
         }
       } else if (!rateLimitData) {
         const { error: insertError } = await supabaseAdmin
           .from('rate_limits')
           .insert({ 
-            session_id: sessionId, 
+            session_id: rateLimitKey, 
             count: 1, 
             reset_at: new Date(now + 60000).toISOString() 
           })
@@ -219,3 +221,4 @@ ${context}`,
     )
   }
 }
+

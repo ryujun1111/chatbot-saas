@@ -60,7 +60,7 @@ CREATE OR REPLACE FUNCTION check_and_increment_usage(
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS \$\$
 DECLARE
   v_subscription_status TEXT;
 BEGIN
@@ -270,5 +270,6 @@ COMMENT ON FUNCTION reset_monthly_usage IS
   'Resets messages_used to 0 for all active subscriptions.
    Should be called monthly via cron: 0 0 1 * *
    Returns number of users reset.';
+
 
 

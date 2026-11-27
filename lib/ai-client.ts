@@ -16,7 +16,7 @@ export const deepseekClient = new OpenAI({
   },
 });
 
-export const DEEPSEEK_MODEL = 'deepseek/deepseek-r1';
+export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek/deepseek-chat';
 
 // ============================================
 // OpenAI 클라이언트 (임베딩 전용)
@@ -135,3 +135,4 @@ export async function createChatCompletion(options: ChatCompletionOptions): Prom
     throw new Error('Failed to create chat completion');
   }
 }
+
