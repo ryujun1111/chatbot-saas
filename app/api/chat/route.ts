@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       'match_documents',
       {
         query_embedding: questionEmbedding,
-        match_threshold: 0.5,
+        match_threshold: 0.3,
         match_count: 3,
         p_chatbot_id: chatbotId,
       }
