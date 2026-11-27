@@ -2,246 +2,230 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth';
-import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import StatCard from '@/components/dashboard/StatCard';
-import RecentChatbots from '@/components/dashboard/RecentChatbots';
+import Link from 'next/link';
 import { 
   Bot, 
   MessageSquare, 
   Users, 
   TrendingUp,
   Plus,
-  FileText,
-  Sparkles,
-  ArrowRight
+  Settings,
+  LogOut
 } from 'lucide-react';
-import Link from 'next/link';
 
 export default function DashboardPage() {
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState<string>('demo@example.com');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = () => {
-    const user = getCurrentUser();
-    
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-    
-    setUserEmail(user.email);
-    setLoading(false);
+  const handleLogout = () => {
+    router.push('/login');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <>
+        <div className="bg-blob bg-blob-blue"></div>
+        <div className="bg-blob bg-blob-purple"></div>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-400">Loading...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <DashboardLayout userEmail={userEmail}>
-      <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            안녕하세요, {userEmail.split('@')[0]}님! 👋
-          </h1>
-          <p className="text-gray-600">
-            오늘도 멋진 하루 되세요. 대시보드에서 모든 것을 관리하세요.
-          </p>
-        </div>
+    <>
+      {/* Background Blobs */}
+      <div className="bg-blob bg-blob-blue"></div>
+      <div className="bg-blob bg-blob-purple"></div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard
-            title="총 챗봇"
-            value="12"
-            icon={Bot}
-            trend={{ value: '+2', isPositive: true }}
-            color="blue"
-          />
-          <StatCard
-            title="총 대화"
-            value="2,547"
-            icon={MessageSquare}
-            trend={{ value: '+23%', isPositive: true }}
-            color="green"
-          />
-          <StatCard
-            title="활성 사용자"
-            value="1,234"
-            icon={Users}
-            trend={{ value: '+12%', isPositive: true }}
-            color="purple"
-          />
-          <StatCard
-            title="응답률"
-            value="94.5%"
-            icon={TrendingUp}
-            trend={{ value: '+2.1%', isPositive: true }}
-            color="orange"
-          />
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Link
-            href="/dashboard/chatbots/new"
-            className="group bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl p-6 hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                <Plus className="w-6 h-6" />
+      <div className="min-h-screen">
+        {/* Navigation */}
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-black/40 backdrop-blur-xl border-b border-white/5">
+          <div className="container mx-auto px-4 md:px-6 lg:px-8 py-3 md:py-4">
+            <div className="flex items-center justify-between">
+              <Link href="/" className="flex items-center gap-2 md:gap-3">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg blur-lg opacity-75"></div>
+                  <Bot className="relative w-6 h-6 md:w-8 md:h-8 text-white" />
+                </div>
+                <span className="text-lg md:text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  ChatBot AI
+                </span>
+              </Link>
+              <div className="flex items-center gap-2 md:gap-4">
+                <span className="hidden md:block text-sm text-gray-400">{userEmail}</span>
+                <button 
+                  onClick={handleLogout}
+                  className="btn-secondary text-xs md:text-sm px-3 md:px-6 py-2 md:py-2.5 flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Log Out</span>
+                </button>
               </div>
-              <ArrowRight className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <h3 className="text-xl font-bold mb-2">새 챗봇 만들기</h3>
-            <p className="text-blue-100 text-sm">
-              AI 챗봇을 몇 분 안에 만들어보세요
-            </p>
-          </Link>
+          </div>
+        </nav>
 
-          <Link
-            href="/dashboard/documents"
-            className="group bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-500 hover:shadow-md transition-all"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                <FileText className="w-6 h-6 text-blue-600" />
-              </div>
-              <ArrowRight className="w-5 h-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">문서 업로드</h3>
-            <p className="text-gray-600 text-sm">
-              지식 베이스 파일을 추가하세요
-            </p>
-          </Link>
-
-          <Link
-            href="/dashboard/analytics"
-            className="group bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-500 hover:shadow-md transition-all"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors">
-                <Sparkles className="w-6 h-6 text-purple-600" />
-              </div>
-              <ArrowRight className="w-5 h-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">통계 보기</h3>
-            <p className="text-gray-600 text-sm">
-              성과와 인사이트를 확인하세요
-            </p>
-          </Link>
-        </div>
-
-        {/* Recent Chatbots */}
-        <div className="mb-8">
-          <RecentChatbots />
-        </div>
-
-        {/* Getting Started Guide */}
-        <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-xl p-8">
-          <div className="flex items-start gap-4 mb-6">
-            <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                시작 가이드
-              </h3>
-              <p className="text-gray-600">
-                몇 가지 간단한 단계로 첫 번째 AI 챗봇을 만들어보세요
+        {/* Main Content */}
+        <section className="relative pt-20 md:pt-28 lg:pt-32 pb-12 md:pb-16 lg:pb-20 px-4 md:px-6">
+          <div className="container mx-auto max-w-7xl">
+            {/* Welcome Section */}
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2">
+                Welcome back! 👋
+              </h1>
+              <p className="text-sm md:text-base text-gray-400">
+                Manage your AI chatbots and analyze conversations
               </p>
             </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-6 mb-6 md:mb-8">
+              {/* Stat Card 1 */}
+              <div className="bg-gray-800/50 backdrop-blur-xl rounded-lg md:rounded-xl border border-white/10 p-4 md:p-6">
+                <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                    <Bot className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
+                  </div>
+                  <span className="text-xs md:text-sm text-gray-400">Total Chatbots</span>
+                </div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">12</div>
+                <div className="text-xs md:text-sm text-green-400">+2 this month</div>
+              </div>
+
+              {/* Stat Card 2 */}
+              <div className="bg-gray-800/50 backdrop-blur-xl rounded-lg md:rounded-xl border border-white/10 p-4 md:p-6">
+                <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 md:w-5 md:h-5 text-green-400" />
+                  </div>
+                  <span className="text-xs md:text-sm text-gray-400">Total Chats</span>
+                </div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">2,547</div>
+                <div className="text-xs md:text-sm text-green-400">+23% this week</div>
+              </div>
+
+              {/* Stat Card 3 */}
+              <div className="bg-gray-800/50 backdrop-blur-xl rounded-lg md:rounded-xl border border-white/10 p-4 md:p-6">
+                <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                    <Users className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
+                  </div>
+                  <span className="text-xs md:text-sm text-gray-400">Active Users</span>
+                </div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">892</div>
+                <div className="text-xs md:text-sm text-green-400">+15% this week</div>
+              </div>
+
+              {/* Stat Card 4 */}
+              <div className="bg-gray-800/50 backdrop-blur-xl rounded-lg md:rounded-xl border border-white/10 p-4 md:p-6">
+                <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-orange-400" />
+                  </div>
+                  <span className="text-xs md:text-sm text-gray-400">Avg Response</span>
+                </div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">1.2s</div>
+                <div className="text-xs md:text-sm text-green-400">-0.3s faster</div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-xl md:rounded-2xl border border-white/10 p-4 md:p-6 lg:p-8 mb-6 md:mb-8">
+              <h2 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Quick Actions</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                <Link href="/try" className="block">
+                  <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg md:rounded-xl hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300">
+                    <Plus className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                    <div className="text-left">
+                      <div className="text-sm md:text-base font-semibold text-white">Create Chatbot</div>
+                      <div className="text-xs text-white/80">From your website</div>
+                    </div>
+                  </button>
+                </Link>
+
+                <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
+                  <MessageSquare className="w-5 h-5 md:w-6 md:h-6 text-blue-400" />
+                  <div className="text-left">
+                    <div className="text-sm md:text-base font-semibold text-white">View Analytics</div>
+                    <div className="text-xs text-gray-400">See performance</div>
+                  </div>
+                </button>
+
+                <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
+                  <Settings className="w-5 h-5 md:w-6 md:h-6 text-purple-400" />
+                  <div className="text-left">
+                    <div className="text-sm md:text-base font-semibold text-white">Settings</div>
+                    <div className="text-xs text-gray-400">Configure your bots</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Recent Chatbots */}
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-xl md:rounded-2xl border border-white/10 p-4 md:p-6 lg:p-8">
+              <h2 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Recent Chatbots</h2>
+              <div className="space-y-3 md:space-y-4">
+                {/* Chatbot 1 */}
+                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-blue-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm md:text-base font-semibold text-white">Support Bot</div>
+                      <div className="text-xs md:text-sm text-gray-400">234 conversations</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  </div>
+                </div>
+
+                {/* Chatbot 2 */}
+                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-purple-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm md:text-base font-semibold text-white">Sales Bot</div>
+                      <div className="text-xs md:text-sm text-gray-400">156 conversations</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  </div>
+                </div>
+
+                {/* Chatbot 3 */}
+                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-green-500/10 rounded-lg flex items-center justify-center">
+                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-green-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm md:text-base font-semibold text-white">FAQ Bot</div>
+                      <div className="text-xs md:text-sm text-gray-400">89 conversations</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg p-6 border border-blue-100">
-              <div className="flex items-start gap-4">
-                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                  1
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-1">문서 업로드</h4>
-                  <p className="text-sm text-gray-600">
-                    PDF, TXT, DOCX 파일이나 웹사이트 URL을 업로드하세요
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg p-6 border border-blue-100">
-              <div className="flex items-start gap-4">
-                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                  2
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-1">챗봇 설정</h4>
-                  <p className="text-sm text-gray-600">
-                    이름, 색상, 환영 메시지를 커스터마이징하세요
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg p-6 border border-blue-100">
-              <div className="flex items-start gap-4">
-                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                  3
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-1">임베드 코드 받기</h4>
-                  <p className="text-sm text-gray-600">
-                    간단한 코드 한 줄로 웹사이트에 추가하세요
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg p-6 border border-blue-100">
-              <div className="flex items-start gap-4">
-                <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                  4
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-1">24/7 자동 응답</h4>
-                  <p className="text-sm text-gray-600">
-                    이제 챗봇이 자동으로 질문에 답변합니다!
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex gap-4">
-            <Link
-              href="/dashboard/chatbots/new"
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <Plus className="w-5 h-5" />
-              지금 시작하기
-            </Link>
-            <Link
-              href="/docs"
-              className="inline-flex items-center gap-2 bg-white text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors border border-gray-200"
-            >
-              문서 보기
-            </Link>
-          </div>
-        </div>
+        </section>
       </div>
-    </DashboardLayout>
+    </>
   );
 }

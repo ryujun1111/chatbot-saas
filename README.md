@@ -1,160 +1,113 @@
-# AI Chatbot SaaS
+# AI Chatbot SaaS - Setup Guide
 
-> DeepSeek R1-powered chatbot platform targeting international markets
+## 🚀 Quick Start
 
-An AI chatbot SaaS platform that enables businesses to create intelligent chatbots trained on their website content. Built with DeepSeek R1 for cost-effective, high-quality AI responses.
-
-## ✨ Key Features
-
-- **Try Without Signup** - Experience the chatbot immediately, no registration required
-- **URL Crawling** - Automatically extract and process website content
-- **DeepSeek R1 AI** - Powered by DeepSeek R1 through OpenRouter for intelligent responses
-- **Website Widget** - Easy-to-embed chatbot widget for any website
-- **Subscription Billing** - Paddle-integrated payment system for recurring revenue
-
-## 🚀 Tech Stack
-
-- **Frontend & Backend**: Next.js 16 (App Router)
-- **AI Model**: DeepSeek R1 via OpenRouter
-- **Database**: Supabase (PostgreSQL)
-- **Payments**: Paddle
-- **Styling**: Tailwind CSS v4
-- **Crawling**: Cheerio
-- **Icons**: Lucide React
-
-## 📋 Prerequisites
-
-- Node.js 18.17 or later
-- npm or yarn
-- Supabase account
-- OpenRouter API key
-- Paddle account (for payments)
-
-## 🛠️ Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd chatbot-saas
-```
-
-2. Install dependencies:
+### 1. Install Dependencies
 ```bash
 npm install
 ```
 
-3. Set up environment variables (see below)
+### 2. Configure Environment Variables
 
-4. Run the development server:
-```bash
+Copy the \.env.local\ file and add your API keys:
+
+\\\ash
+# Supabase (Already configured)
+NEXT_PUBLIC_SUPABASE_URL=https://hckcuzdigluapiovftsy.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here  # Get from Supabase Dashboard
+SUPABASE_SERVICE_ROLE_KEY=your_key_here      # Get from Supabase Dashboard
+
+# OpenRouter (DeepSeek R1) - Already have \ credit
+OPENROUTER_API_KEY=your_key_here             # Get from OpenRouter Dashboard
+
+# OpenAI (Embeddings)
+OPENAI_API_KEY=your_key_here                 # Get from OpenAI Dashboard
+\\\
+
+### 3. Get Your API Keys
+
+#### Supabase Keys:
+1. Go to: https://supabase.com/dashboard/project/hckcuzdigluapiovftsy/settings/api-keys
+2. Copy **Publishable key** (anon key)
+3. Reveal and copy **Secret key** (service role key)
+
+#### OpenRouter Key:
+1. Go to: https://openrouter.ai/keys
+2. Copy your API key
+
+#### OpenAI Key:
+1. Go to: https://platform.openai.com/api-keys
+2. Create and copy your API key
+
+### 4. Run Development Server
+
+\\\ash
 npm run dev
-```
+\\\
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+Open [http://localhost:3000](http://localhost:3000)
 
-## 🔑 Environment Variables
+## 📊 Production Deployment
 
-Create a `.env.local` file in the root directory:
+Already deployed at: **https://chatbot-saas-tau-sandy.vercel.app**
 
-```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+### Add Environment Variables to Vercel:
+1. Go to: https://vercel.com/ryujun1111/chatbot-saas/settings/environment-variables
+2. Add all variables from \.env.local\
+3. Redeploy
 
-# OpenRouter API (DeepSeek R1)
-OPENROUTER_API_KEY=your_openrouter_api_key
+## 📂 Project Structure
 
-# Paddle Payment Gateway
-NEXT_PUBLIC_PADDLE_CLIENT_TOKEN=your_paddle_client_token
-PADDLE_API_KEY=your_paddle_api_key
-NEXT_PUBLIC_PADDLE_ENVIRONMENT=sandbox # or 'production'
+\\\
+app/
+├── page.tsx                 # Home page (mobile responsive)
+├── login/page.tsx          # Login (mobile responsive)
+├── signup/page.tsx         # Signup (mobile responsive)
+├── pricing/page.tsx        # Pricing (mobile responsive) ✨ NEW
+├── try/page.tsx            # Try demo (mobile responsive)
+├── demo/page.tsx           # Redirect to /try ✨ NEW
+├── dashboard/page.tsx      # Dashboard
+└── api/                    # API routes (8 endpoints)
+    ├── analytics/
+    ├── chat/
+    ├── chatbots/
+    ├── crawl/
+    ├── documents/
+    ├── embed/
+    └── settings/
+\\\
 
-# Application
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+## 🎨 Tech Stack
 
-### Variable Descriptions
+- **Framework**: Next.js 16
+- **Database**: Supabase (PostgreSQL)
+- **AI Model**: DeepSeek R1 (via OpenRouter)
+- **Embeddings**: OpenAI
+- **Styling**: Tailwind CSS v3.4.0
+- **Deployment**: Vercel
 
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side only) |
-| `OPENROUTER_API_KEY` | OpenRouter API key for DeepSeek R1 access |
-| `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` | Paddle client-side token |
-| `PADDLE_API_KEY` | Paddle server-side API key |
-| `NEXT_PUBLIC_PADDLE_ENVIRONMENT` | Paddle environment (`sandbox` or `production`) |
-| `NEXT_PUBLIC_APP_URL` | Your application URL |
+## 📱 Mobile Responsive
 
-## 📦 Deployment
+All pages are fully mobile responsive:
+- Mobile: 375px (iPhone SE)
+- Tablet: 768px (iPad)
+- Desktop: 1920px (Full HD)
 
-### Vercel (Recommended)
+## 🔑 Next Steps
 
-1. Push your code to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Add environment variables in Vercel project settings
-4. Deploy
+1. ✅ Add API keys to \.env.local\
+2. ✅ Test locally (\
+pm run dev\)
+3. ✅ Add environment variables to Vercel
+4. 🚀 Start marketing (Product Hunt, Reddit, Agency outreach)
 
-```bash
-npm run build
-```
+## 💰 Pricing
 
-### Cloudflare Pages
+- Free: \/mo (5 messages/day)
+- Starter: \/mo (1,000 messages)
+- Growth: \/mo (5,000 messages)
+- Agency: \/mo (15,000 messages)
 
-1. Build the application:
-```bash
-npm run build
-```
+## 📞 Support
 
-2. Deploy the `.next` output directory to Cloudflare Pages
-3. Configure environment variables in Cloudflare dashboard
-
-## 📁 Project Structure
-
-```
-chatbot-saas/
-├── app/
-│   ├── (auth)/          # Authentication pages (login, signup)
-│   ├── api/             # API routes
-│   │   ├── chat/        # Chat completion endpoint
-│   │   ├── crawl/       # URL crawling endpoint
-│   │   └── embed/       # Embedding generation
-│   ├── dashboard/       # User dashboard
-│   ├── try/             # Try-before-signup demo
-│   └── widget/          # Embeddable chatbot widget
-├── components/          # Reusable React components
-├── lib/                 # Utility functions and helpers
-│   ├── supabase/        # Supabase client configuration
-│   └── utils/           # Helper functions
-├── public/              # Static assets
-└── docs/                # Documentation
-```
-
-## 🎯 Goals
-
-- ✅ Build MVP with core chatbot functionality
-- 🎯 **First $1 Payment** - Achieve first paying customer
-- 🎯 **$770 MRR** - Reach monthly recurring revenue target
-
-## 📄 License
-
-MIT License - feel free to use this project for your own purposes.
-
-## 🤝 Contributing
-
-This is a solo founder project, but issues and pull requests are welcome!
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📧 Contact
-
-For questions or suggestions, please open an issue.
-
----
-
-**Built with ❤️ by a solo founder**
+For issues, contact: ryujy0915@gmail.com
