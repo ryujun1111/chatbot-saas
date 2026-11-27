@@ -6,10 +6,18 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #000000 !important;
+  color: #ffffff !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Poppins', sans-serif;
+  color: #ffffff !important;
+}
+
+/* Force white text everywhere */
+p, span, div, a, button, li {
+  color: #ffffff !important;
 }
 
 
