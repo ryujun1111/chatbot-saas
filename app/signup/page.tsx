@@ -18,15 +18,25 @@ export default function SignupPage() {
     setError('');
     setLoading(true);
 
-    // Simulate signup (replace with actual auth)
-    setTimeout(() => {
-      if (name && email && password) {
-        router.push('/dashboard');
-      } else {
-        setError('Please fill in all fields');
-        setLoading(false);
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Signup failed');
       }
-    }, 1000);
+
+      // Success - redirect to dashboard
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create account');
+      setLoading(false);
+    }
   };
 
   return (
