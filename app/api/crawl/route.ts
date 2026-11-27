@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { openaiClient, OPENAI_EMBEDDING_MODEL } from '@/lib/ai-client';
 import * as cheerio from 'cheerio';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Rate limiting: IP당 시간당 10회
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -181,6 +187,25 @@ async function crawlPage(url: string): Promise<{ url: string; title: string; con
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Authentication
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Invalid token' },
+        { status: 401 }
+      );
+    }
+
     // IP 주소 가져오기
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 
                request.headers.get('x-real-ip') || 
@@ -206,7 +231,35 @@ export async function POST(request: NextRequest) {
     
     // 요청 본문 파싱
     const body = await request.json();
-    const { url, maxPages = 10 } = body;
+    const { chatbotId, url, maxPages = 10 } = body;
+
+    if (!chatbotId) {
+      return NextResponse.json(
+        { success: false, error: 'chatbotId is required' },
+        { status: 400 }
+      );
+    }
+
+    // 2. Verify chatbot ownership
+    const { data: chatbot, error: chatbotError } = await supabase
+      .from('chatbots')
+      .select('user_id')
+      .eq('id', chatbotId)
+      .single();
+
+    if (chatbotError || !chatbot) {
+      return NextResponse.json(
+        { error: 'Chatbot not found' },
+        { status: 404 }
+      );
+    }
+
+    if (chatbot.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Not your chatbot' },
+        { status: 403 }
+      );
+    }
     
     if (!url) {
       return NextResponse.json(
@@ -236,19 +289,61 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // 크롤링 수행 (현재는 단일 페이지만)
-    const pages = [];
+    // 크롤링 수행
     const pageData = await crawlPage(url);
     
-    if (pageData) {
-      pages.push(pageData);
+    if (!pageData) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to crawl URL' },
+        { status: 400 }
+      );
+    }
+
+    // 3. Create embeddings and store in database
+    const chunks = pageData.content.match(/.{1,1000}/g) || [pageData.content];
+    const documentsCreated = [];
+
+    for (const chunk of chunks) {
+      try {
+        // Generate embedding
+        const embeddingResponse = await openaiClient.embeddings.create({
+          model: OPENAI_EMBEDDING_MODEL,
+          input: chunk,
+        });
+
+        const embedding = embeddingResponse.data[0].embedding;
+
+        // Store document
+        const { data: doc, error: docError } = await supabase
+          .from('documents')
+          .insert([{
+            chatbot_id: chatbotId,
+            content: chunk,
+            url: pageData.url,
+            source: 'crawl',
+            embedding: embedding,
+            created_at: new Date().toISOString(),
+          }])
+          .select()
+          .single();
+
+        if (!docError && doc) {
+          documentsCreated.push(doc.id);
+        }
+      } catch (embError) {
+        console.error('Embedding error:', embError);
+        // Continue with next chunk
+      }
     }
     
     // 응답
     return NextResponse.json(
       {
         success: true,
-        pages,
+        url: pageData.url,
+        title: pageData.title,
+        chunks: chunks.length,
+        documents: documentsCreated,
       },
       {
         headers: {
