@@ -20,7 +20,7 @@ import {
 
 export default function Home() {
   return (
-    <div className="min-h-screen text-white" style={{ backgroundColor: "#000000" }}>
+    <div className="min-h-screen text-white" style={{ backgroundColor: "#000000", color: "#ffffff" }}>
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-black/50 backdrop-blur-2xl">
         <div className="container mx-auto px-6 lg:px-8 py-4">
