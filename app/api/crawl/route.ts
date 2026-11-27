@@ -302,8 +302,10 @@ export async function POST(request: NextRequest) {
     // 3. Create embeddings and store in database
     const chunks = pageData.content.match(/.{1,1000}/g) || [pageData.content];
     const documentsCreated = [];
+    const failedChunks = [];
 
-    for (const chunk of chunks) {
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
       try {
         // Generate embedding
         const embeddingResponse = await openaiClient.embeddings.create({
@@ -329,11 +331,25 @@ export async function POST(request: NextRequest) {
 
         if (!docError && doc) {
           documentsCreated.push(doc.id);
+        } else {
+          failedChunks.push({ index: i, error: docError?.message || 'DB insert failed' });
         }
-      } catch (embError) {
-        console.error('Embedding error:', embError);
-        // Continue with next chunk
+      } catch (embError: any) {
+        console.error('Embedding error for chunk', i, ':', embError);
+        failedChunks.push({ index: i, error: embError.message || 'Embedding failed' });
       }
+    }
+
+    // Check if all chunks failed
+    if (documentsCreated.length === 0) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'All document chunks failed to process',
+          details: failedChunks 
+        },
+        { status: 500 }
+      );
     }
     
     // 응답
@@ -342,8 +358,11 @@ export async function POST(request: NextRequest) {
         success: true,
         url: pageData.url,
         title: pageData.title,
-        chunks: chunks.length,
+        totalChunks: chunks.length,
+        successfulChunks: documentsCreated.length,
+        failedChunks: failedChunks.length,
         documents: documentsCreated,
+        ...(failedChunks.length > 0 && { failures: failedChunks }),
       },
       {
         headers: {
