@@ -18,7 +18,13 @@ import {
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div 
+      className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"
+      style={{
+        background: 'linear-gradient(to bottom right, #0f172a, #581c87, #0f172a)',
+        minHeight: '100vh'
+      }}
+    >
       {/* Navigation */}
       <nav className="border-b border-white/10 bg-black/20 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-6 lg:px-8 py-4">
