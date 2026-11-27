@@ -2,74 +2,152 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { openaiClient, OPENAI_EMBEDDING_MODEL, createChatCompletion } from '@/lib/ai-client'
 
+// Rate limiting store (in production, use Redis)
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(userId: string, maxRequests: number = 60): boolean {
+  const now = Date.now();
+  const userLimit = rateLimitStore.get(userId);
+
+  if (!userLimit || userLimit.resetAt < now) {
+    rateLimitStore.set(userId, { count: 1, resetAt: now + 60000 }); // 1 minute
+    return true;
+  }
+
+  if (userLimit.count >= maxRequests) {
+    return false;
+  }
+
+  userLimit.count++;
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // 요청 body 파싱
     const body = await request.json()
-    const { chatbotId, message } = body
+    const { chatbotId, message, userId } = body
 
-    // 필수 파라미터 검증
+    // Required parameter validation
     if (!chatbotId || !message) {
       return NextResponse.json(
-        { error: 'chatbotId와 message는 필수입니다' },
+        { error: 'chatbotId and message are required' },
         { status: 400 }
       )
     }
 
-    // 1. 질문을 임베딩으로 변환 (OpenAI 사용)
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User authentication required' },
+        { status: 401 }
+      )
+    }
+
+    // Message length validation (max 2000 characters)
+    if (message.length > 2000) {
+      return NextResponse.json(
+        { error: 'Message too long (max 2000 characters)' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+
+    // Get user plan and usage
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('plan, message_limit, messages_used')
+      .eq('id', userId)
+      .single()
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+
+    // Check message limit
+    const messagesUsed = user.messages_used || 0;
+    const messageLimit = user.message_limit || 5;
+
+    if (messagesUsed >= messageLimit) {
+      return NextResponse.json(
+        { 
+          error: 'Monthly message limit reached',
+          limit: messageLimit,
+          used: messagesUsed
+        },
+        { status: 429 }
+      )
+    }
+
+    // Rate limiting (60 requests per minute)
+    if (!checkRateLimit(userId, 60)) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      )
+    }
+
+    // 1. Convert question to embedding (OpenAI)
     const embeddingResponse = await openaiClient.embeddings.create({
       model: OPENAI_EMBEDDING_MODEL,
       input: message,
     })
     const questionEmbedding = embeddingResponse.data[0].embedding
 
-    // 2. Supabase 벡터 검색 (상위 3개)
-    const supabase = await createClient()
-    
+    // 2. Vector search in Supabase (top 3)
     const { data: documents, error: searchError } = await supabase.rpc(
       'match_documents',
       {
         query_embedding: questionEmbedding,
-        match_threshold: 0.5, // 유사도 임계값
-        match_count: 3, // 상위 3개
-        p_chatbot_id: chatbotId, // chatbot_id 필터
+        match_threshold: 0.5,
+        match_count: 3,
+        p_chatbot_id: chatbotId,
       }
     )
 
     if (searchError) {
-      console.error('벡터 검색 오류:', searchError)
+      console.error('Vector search error:', searchError)
       return NextResponse.json(
-        { error: '문서 검색 중 오류가 발생했습니다' },
+        { error: 'Failed to search documents' },
         { status: 500 }
       )
     }
 
-    // 검색 결과가 없는 경우
+    // No results found
     if (!documents || documents.length === 0) {
+      // Increment usage even for no-match responses
+      await supabase
+        .from('users')
+        .update({ messages_used: messagesUsed + 1 })
+        .eq('id', userId)
+
       return NextResponse.json({
-        answer: '죄송합니다. 관련된 정보를 찾을 수 없습니다. 다른 질문을 해주시겠어요?',
+        answer: "I'm sorry, I couldn't find relevant information to answer your question. Could you try rephrasing it or ask something else?",
         sources: [],
       })
     }
 
-    // 3. 검색된 문서들을 컨텍스트로 구성
+    // 3. Build context from search results
     const context = documents
       .map((doc: any) => doc.content)
       .join('\n\n---\n\n')
 
     const sources = documents.map((doc: any) => doc.source || doc.url || '')
 
-    // 4. DeepSeek R1으로 답변 생성
+    // 4. Generate answer with DeepSeek R1
     const answer = await createChatCompletion({
       messages: [
         {
           role: 'system',
-          content: `당신은 도움이 되는 AI 어시스턴트입니다. 
-주어진 컨텍스트를 바탕으로 사용자의 질문에 정확하고 친절하게 답변해주세요.
-컨텍스트에 없는 정보는 추측하지 말고, 모르면 모른다고 답변하세요.
-답변은 한국어로 작성하고, 가능한 구체적이고 명확하게 작성하세요.
+          content: `You are a helpful AI assistant.
+Answer the user's question accurately and kindly based on the given context.
+Do not make up information that is not in the context. If you don't know, say so.
+Answer in the same language as the user's question.
+Be specific and clear in your responses.
 
-컨텍스트:
+Context:
 ${context}`,
         },
         {
@@ -78,19 +156,34 @@ ${context}`,
         },
       ],
       temperature: 0.7,
+      max_tokens: 500, // Limit response length
     })
 
-    // 5. 응답 반환
+    // 5. Increment usage counter
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ messages_used: messagesUsed + 1 })
+      .eq('id', userId)
+
+    if (updateError) {
+      console.error('Failed to update usage:', updateError)
+    }
+
+    // 6. Return response
     return NextResponse.json({
       answer,
-      sources: sources.filter((s: string) => s), // 빈 소스 제거
+      sources: sources.filter((s: string) => s),
+      usage: {
+        used: messagesUsed + 1,
+        limit: messageLimit
+      }
     })
   } catch (error) {
-    console.error('API 오류:', error)
+    console.error('API error:', error)
     return NextResponse.json(
       { 
-        error: '답변 생성 중 오류가 발생했습니다',
-        details: error instanceof Error ? error.message : '알 수 없는 오류'
+        error: 'Failed to generate response',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     )
