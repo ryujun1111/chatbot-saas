@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 import { openaiClient, OPENAI_EMBEDDING_MODEL, createChatCompletion } from '@/lib/ai-client'
+
+// Service Role client for bypassing RLS
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,52 +27,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
-
-    // 1. Get chatbot and owner
-    const { data: chatbot, error: chatbotError } = await supabase
-      .from('chatbots')
-      .select('user_id, name')
-      .eq('id', chatbotId)
-      .single()
-
-    if (chatbotError || !chatbot) {
-      return NextResponse.json(
-        { error: 'Chatbot not found' },
-        { status: 404 }
-      )
-    }
-
-    const ownerId = chatbot.user_id
-
-    // 2. Atomic quota check and usage increment
-    const { data: usageResult, error: usageError } = await supabase.rpc(
-      'check_and_increment_usage',
-      { p_user_id: ownerId }
-    )
-
-    if (usageError) {
-      console.error('Usage check failed:', usageError)
-      return NextResponse.json(
-        { error: 'Failed to check usage quota' },
-        { status: 500 }
-      )
-    }
-
-    if (!usageResult || !usageResult[0]?.can_use) {
-      return NextResponse.json(
-        { 
-          error: 'Monthly message limit reached',
-          limit: usageResult?.[0]?.current_limit || 0,
-          used: usageResult?.[0]?.current_used || 0
-        },
-        { status: 429 }
-      )
-    }
-
-    // 3. Rate limiting (session-based)
+    // 1. Rate limiting FIRST (before any usage increment)
     if (sessionId) {
-      const { data: rateLimitData, error: rateLimitError } = await supabase
+      const { data: rateLimitData, error: rateLimitError } = await supabaseAdmin
         .from('rate_limits')
         .select('count, reset_at')
         .eq('session_id', sessionId)
@@ -85,25 +48,82 @@ export async function POST(request: NextRequest) {
             )
           }
           
-          await supabase
+          const { error: updateError } = await supabaseAdmin
             .from('rate_limits')
             .update({ count: rateLimitData.count + 1 })
             .eq('session_id', sessionId)
+          
+          if (updateError) {
+            console.error('Rate limit update failed:', updateError)
+            return NextResponse.json(
+              { error: 'Rate limit service unavailable' },
+              { status: 503 }
+            )
+          }
         } else {
-          await supabase
+          await supabaseAdmin
             .from('rate_limits')
             .update({ count: 1, reset_at: new Date(now + 60000).toISOString() })
             .eq('session_id', sessionId)
         }
-      } else {
-        await supabase
+      } else if (!rateLimitData) {
+        const { error: insertError } = await supabaseAdmin
           .from('rate_limits')
           .insert({ 
             session_id: sessionId, 
             count: 1, 
             reset_at: new Date(now + 60000).toISOString() 
           })
+        
+        if (insertError) {
+          console.error('Rate limit insert failed:', insertError)
+          return NextResponse.json(
+            { error: 'Rate limit service unavailable' },
+            { status: 503 }
+          )
+        }
       }
+    }
+
+    // 2. Get chatbot and owner (Service Role bypasses RLS)
+    const { data: chatbot, error: chatbotError } = await supabaseAdmin
+      .from('chatbots')
+      .select('user_id, name')
+      .eq('id', chatbotId)
+      .single()
+
+    if (chatbotError || !chatbot) {
+      return NextResponse.json(
+        { error: 'Chatbot not found' },
+        { status: 404 }
+      )
+    }
+
+    const ownerId = chatbot.user_id
+
+    // 3. Atomic quota check and usage increment
+    const { data: usageResult, error: usageError } = await supabaseAdmin.rpc(
+      'check_and_increment_usage',
+      { p_user_id: ownerId }
+    )
+
+    if (usageError) {
+      console.error('Usage check failed:', usageError)
+      return NextResponse.json(
+        { error: 'Failed to check usage quota' },
+        { status: 500 }
+      )
+    }
+
+    if (!usageResult || !usageResult.can_use) {
+      return NextResponse.json(
+        { 
+          error: 'Monthly message limit reached',
+          limit: usageResult?.current_limit || 0,
+          used: usageResult?.current_used || 0
+        },
+        { status: 429 }
+      )
     }
 
     // 4. Convert question to embedding
@@ -114,7 +134,7 @@ export async function POST(request: NextRequest) {
     const questionEmbedding = embeddingResponse.data[0].embedding
 
     // 5. Vector search
-    const { data: documents, error: searchError } = await supabase.rpc(
+    const { data: documents, error: searchError } = await supabaseAdmin.rpc(
       'match_documents',
       {
         query_embedding: questionEmbedding,
@@ -138,8 +158,8 @@ export async function POST(request: NextRequest) {
         answer: "I'm sorry, I couldn't find relevant information to answer your question. Could you try rephrasing it or ask something else?",
         sources: [],
         usage: {
-          used: usageResult[0].current_used,
-          limit: usageResult[0].current_limit
+          used: usageResult.current_used,
+          limit: usageResult.current_limit
         }
       })
     }
@@ -179,8 +199,8 @@ ${context}`,
       answer,
       sources: sources.filter((s: string) => s),
       usage: {
-        used: usageResult[0].current_used,
-        limit: usageResult[0].current_limit
+        used: usageResult.current_used,
+        limit: usageResult.current_limit
       }
     })
   } catch (error) {

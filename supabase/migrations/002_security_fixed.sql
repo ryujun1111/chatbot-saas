@@ -60,16 +60,24 @@ CREATE OR REPLACE FUNCTION check_and_increment_usage(
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $
+DECLARE
+  v_subscription_status TEXT;
 BEGIN
-  -- Lock the row for update
+  -- Lock the row for update and check subscription
   SELECT message_limit, messages_used, subscription_status
-  INTO current_limit, current_used
+  INTO current_limit, current_used, v_subscription_status
   FROM users
   WHERE id = p_user_id
   FOR UPDATE;
 
-  -- Check if usage is within limit and subscription is active
+  -- Check subscription status
+  IF v_subscription_status != 'active' THEN
+    can_use := FALSE;
+    RETURN;
+  END IF;
+
+  -- Check if usage is within limit
   IF current_used < current_limit THEN
     -- Increment usage
     UPDATE users
@@ -86,8 +94,9 @@ END;
 $$;
 
 -- Grant execute to authenticated and service role only
+-- Only service role can execute (called from API, not client)
 REVOKE ALL ON FUNCTION check_and_increment_usage FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION check_and_increment_usage TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION check_and_increment_usage TO service_role;
 
 -- ============================================
 -- 5. Monthly usage reset
@@ -261,3 +270,5 @@ COMMENT ON FUNCTION reset_monthly_usage IS
   'Resets messages_used to 0 for all active subscriptions.
    Should be called monthly via cron: 0 0 1 * *
    Returns number of users reset.';
+
+
