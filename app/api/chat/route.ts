@@ -2,30 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { openaiClient, OPENAI_EMBEDDING_MODEL, createChatCompletion } from '@/lib/ai-client'
 
-// Rate limiting store (in production, use Redis)
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(userId: string, maxRequests: number = 60): boolean {
-  const now = Date.now();
-  const userLimit = rateLimitStore.get(userId);
-
-  if (!userLimit || userLimit.resetAt < now) {
-    rateLimitStore.set(userId, { count: 1, resetAt: now + 60000 }); // 1 minute
-    return true;
-  }
-
-  if (userLimit.count >= maxRequests) {
-    return false;
-  }
-
-  userLimit.count++;
-  return true;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { chatbotId, message, userId } = body
+    const { chatbotId, message, sessionId } = body
 
     // Required parameter validation
     if (!chatbotId || !message) {
@@ -35,14 +15,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User authentication required' },
-        { status: 401 }
-      )
-    }
-
-    // Message length validation (max 2000 characters)
+    // Message length validation
     if (message.length > 2000) {
       return NextResponse.json(
         { error: 'Message too long (max 2000 characters)' },
@@ -52,23 +25,47 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Get user plan and usage
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('plan, message_limit, messages_used')
-      .eq('id', userId)
+    // 1. Get chatbot and owner information
+    const { data: chatbot, error: chatbotError } = await supabase
+      .from('chatbots')
+      .select('user_id, name')
+      .eq('id', chatbotId)
       .single()
 
-    if (userError || !user) {
+    if (chatbotError || !chatbot) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { error: 'Chatbot not found' },
         { status: 404 }
       )
     }
 
-    // Check message limit
-    const messagesUsed = user.messages_used || 0;
-    const messageLimit = user.message_limit || 5;
+    const ownerId = chatbot.user_id
+
+    // 2. Get owner's plan and usage (atomic increment)
+    const { data: owner, error: ownerError } = await supabase
+      .from('users')
+      .select('plan, message_limit, messages_used, subscription_status')
+      .eq('id', ownerId)
+      .single()
+
+    if (ownerError || !owner) {
+      return NextResponse.json(
+        { error: 'Owner not found' },
+        { status: 404 }
+      )
+    }
+
+    // Check subscription status
+    if (owner.subscription_status === 'canceled' || owner.subscription_status === 'payment_failed') {
+      return NextResponse.json(
+        { error: 'Subscription inactive. Please renew your plan.' },
+        { status: 403 }
+      )
+    }
+
+    // 3. Check message limit (owner's quota)
+    const messagesUsed = owner.messages_used || 0
+    const messageLimit = owner.message_limit || 5
 
     if (messagesUsed >= messageLimit) {
       return NextResponse.json(
@@ -81,22 +78,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Rate limiting (60 requests per minute)
-    if (!checkRateLimit(userId, 60)) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429 }
-      )
+    // 4. Rate limiting check (session-based)
+    if (sessionId) {
+      const { data: rateLimitData } = await supabase
+        .from('rate_limits')
+        .select('count, reset_at')
+        .eq('session_id', sessionId)
+        .single()
+
+      const now = Date.now()
+      if (rateLimitData) {
+        if (new Date(rateLimitData.reset_at).getTime() > now) {
+          if (rateLimitData.count >= 20) { // 20 messages per minute per session
+            return NextResponse.json(
+              { error: 'Too many requests. Please try again later.' },
+              { status: 429 }
+            )
+          }
+          // Increment count
+          await supabase
+            .from('rate_limits')
+            .update({ count: rateLimitData.count + 1 })
+            .eq('session_id', sessionId)
+        } else {
+          // Reset
+          await supabase
+            .from('rate_limits')
+            .update({ count: 1, reset_at: new Date(now + 60000).toISOString() })
+            .eq('session_id', sessionId)
+        }
+      } else {
+        // Create new rate limit entry
+        await supabase
+          .from('rate_limits')
+          .insert({ 
+            session_id: sessionId, 
+            count: 1, 
+            reset_at: new Date(now + 60000).toISOString() 
+          })
+      }
     }
 
-    // 1. Convert question to embedding (OpenAI)
+    // 5. Convert question to embedding
     const embeddingResponse = await openaiClient.embeddings.create({
       model: OPENAI_EMBEDDING_MODEL,
       input: message,
     })
     const questionEmbedding = embeddingResponse.data[0].embedding
 
-    // 2. Vector search in Supabase (top 3)
+    // 6. Vector search
     const { data: documents, error: searchError } = await supabase.rpc(
       'match_documents',
       {
@@ -115,28 +145,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 7. Increment usage counter (atomic)
+    const { error: incrementError } = await supabase.rpc(
+      'increment_messages_used',
+      { user_id: ownerId }
+    )
+
+    if (incrementError) {
+      console.error('Failed to increment usage:', incrementError)
+    }
+
     // No results found
     if (!documents || documents.length === 0) {
-      // Increment usage even for no-match responses
-      await supabase
-        .from('users')
-        .update({ messages_used: messagesUsed + 1 })
-        .eq('id', userId)
-
       return NextResponse.json({
         answer: "I'm sorry, I couldn't find relevant information to answer your question. Could you try rephrasing it or ask something else?",
         sources: [],
+        usage: {
+          used: messagesUsed + 1,
+          limit: messageLimit
+        }
       })
     }
 
-    // 3. Build context from search results
+    // 8. Build context
     const context = documents
       .map((doc: any) => doc.content)
       .join('\n\n---\n\n')
 
     const sources = documents.map((doc: any) => doc.source || doc.url || '')
 
-    // 4. Generate answer with DeepSeek R1
+    // 9. Generate answer
     const answer = await createChatCompletion({
       messages: [
         {
@@ -156,20 +194,10 @@ ${context}`,
         },
       ],
       temperature: 0.7,
-      max_tokens: 500, // Limit response length
+      maxTokens: 500,
     })
 
-    // 5. Increment usage counter
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ messages_used: messagesUsed + 1 })
-      .eq('id', userId)
-
-    if (updateError) {
-      console.error('Failed to update usage:', updateError)
-    }
-
-    // 6. Return response
+    // 10. Return response
     return NextResponse.json({
       answer,
       sources: sources.filter((s: string) => s),
@@ -180,11 +208,17 @@ ${context}`,
     })
   } catch (error) {
     console.error('API error:', error)
+    
+    // Check if it's an AI API error
+    if (error instanceof Error && error.message.includes('API')) {
+      return NextResponse.json(
+        { error: 'AI service temporarily unavailable. Please try again.' },
+        { status: 503 }
+      )
+    }
+
     return NextResponse.json(
-      { 
-        error: 'Failed to generate response',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to generate response' },
       { status: 500 }
     )
   }
