@@ -1,47 +1,48 @@
-import './globals.css'
-import { Inter } from 'next/font/google'
-import Script from 'next/script'
-import GoogleAnalytics from '@/components/GoogleAnalytics'
+import "./globals.css";
+import { Inter } from "next/font/google";
+import Script from "next/script";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] });
+
+const siteUrl =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "https://chatbot-saas-tau-sandy.vercel.app";
 
 export const metadata = {
-  title: 'ChatBot AI - Add Intelligent Chatbot to Your Website',
-  description: 'Build and deploy AI-powered chatbots with custom knowledge base. No coding required.',
-}
+  metadataBase: new URL(siteUrl),
+  title: "ChatBot AI - Add Intelligent Chatbot to Your Website",
+  description:
+    "Build and deploy AI-powered chatbots trained on your own website content. No coding required.",
+  openGraph: {
+    title: "ChatBot AI - Add Intelligent Chatbot to Your Website",
+    description:
+      "Turn your website into an AI chatbot that answers customer questions 24/7.",
+    images: ["/og-image.png"],
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", images: ["/twitter-card.png"] },
+  icons: { icon: "/logo-icon.svg", apple: "/apple-touch-icon.png" },
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en">
-      <head>
-        <Script 
-          src="https://cdn.paddle.com/paddle/v2/paddle.js"
-          strategy="afterInteractive"
-        />
-        <Script id="paddle-init" strategy="afterInteractive">
-          {`
-            if (typeof Paddle !== 'undefined') {
-              Paddle.Initialize({
-                token: 'live_ce1e56ad5ff88ee1e6e1d49fb',
-                checkout: {
-                  settings: {
-                    displayMode: "overlay",
-                    theme: "light"
-                  }
-                }
-              });
-            }
-          `}
-        </Script>
-      </head>
       <body className={inter.className}>
+        {/* Paddle.js is initialised on demand by PaddleButton (token/env come from env vars) */}
+        {process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN && (
+          <Script
+            src="https://cdn.paddle.com/paddle/v2/paddle.js"
+            strategy="afterInteractive"
+          />
+        )}
         <GoogleAnalytics />
         {children}
       </body>
     </html>
-  )
+  );
 }

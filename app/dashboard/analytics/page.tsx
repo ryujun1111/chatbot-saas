@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth';
+import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent, Loading } from '@/components/ui';
 import { 
   MessageSquare, 
@@ -36,7 +36,9 @@ interface AnalyticsData {
     monthMessages: number;
     activeChatbots: number;
     avgResponseTime: number;
+    uniqueVisitors: number;
   };
+  usage: { planName: string; used: number; limit: number };
   charts: {
     daily: Array<{ date: string; count: number; label: string }>;
     chatbots: Array<{ name: string; count: number }>;
@@ -53,19 +55,17 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState('30');
   const router = useRouter();
 
+  // The proxy already blocks logged-out visitors; a 401 here means the session expired
   useEffect(() => {
-    const user = getCurrentUser();
-    if (!user) {
-      router.push('/login');
-      return;
-    }
     fetchAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/analytics?period=${period}`);
+      if (response.status === 401) return router.replace('/login?next=/dashboard/analytics');
       if (!response.ok) throw new Error('Failed to fetch analytics');
       const analyticsData = await response.json();
       setData(analyticsData);
@@ -81,17 +81,13 @@ export default function AnalyticsPage() {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
-  const getChangePercentage = (current: number, previous: number) => {
-    if (previous === 0) return 0;
-    return ((current - previous) / previous * 100).toFixed(1);
-  };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <Loading size="lg" />
-          <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
+          <p className="mt-4 text-gray-600">Loading analytics...</p>
         </div>
       </div>
     );
@@ -101,21 +97,24 @@ export default function AnalyticsPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <p className="text-xl text-gray-600">데이터를 불러올 수 없습니다.</p>
+          <p className="text-xl text-gray-600">Could not load analytics.</p>
         </div>
       </div>
     );
   }
 
+  const usagePct = data.usage.limit ? Math.min((data.usage.used / data.usage.limit) * 100, 100) : 0;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-        <div className="container-custom py-6">
-          <div className="flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">사용량 통계</h1>
-              <p className="text-gray-600 mt-1">챗봇 성능 및 사용 현황을 한눈에 확인하세요</p>
+              <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">← Back to Dashboard</Link>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Analytics</h1>
+              <p className="text-gray-600 mt-1">How visitors use your chatbots</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -126,7 +125,7 @@ export default function AnalyticsPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                7일
+                7 days
               </button>
               <button
                 onClick={() => setPeriod('30')}
@@ -136,28 +135,28 @@ export default function AnalyticsPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                30일
+                30 days
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <main className="container-custom py-8">
-        {/* 주요 지표 카드 */}
+      <main className="max-w-7xl mx-auto px-4 md:px-6 py-8">
+        {/* Key metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* 총 메시지 수 */}
+          {/* Total messages */}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">총 메시지 수</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Total messages</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {data.summary.totalMessages.toLocaleString()}
                   </p>
                   <p className="text-xs text-success-600 mt-2">
                     <TrendingUp className="w-3 h-3 inline mr-1" />
-                    전체 기간
+                    All time
                   </p>
                 </div>
                 <div className="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center">
@@ -167,18 +166,18 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 이번 달 메시지 */}
+          {/* This month */}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">이번 달 메시지</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Messages this month</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {data.summary.monthMessages.toLocaleString()}
                   </p>
                   <p className="text-xs text-success-600 mt-2">
                     <Calendar className="w-3 h-3 inline mr-1" />
-                    이번 달
+                    {data.usage.used.toLocaleString()} / {data.usage.limit.toLocaleString()} plan quota
                   </p>
                 </div>
                 <div className="w-14 h-14 bg-success-100 rounded-xl flex items-center justify-center">
@@ -188,18 +187,18 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 활성 챗봇 수 */}
+          {/* Active chatbots */}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">활성 챗봇</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Active chatbots</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {data.summary.activeChatbots}
                   </p>
                   <p className="text-xs text-primary-600 mt-2">
                     <Bot className="w-3 h-3 inline mr-1" />
-                    운영 중
+                    {data.summary.uniqueVisitors.toLocaleString()} visitors in period
                   </p>
                 </div>
                 <div className="w-14 h-14 bg-warning-100 rounded-xl flex items-center justify-center">
@@ -209,18 +208,18 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 평균 응답 시간 */}
+          {/* Avg response time */}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">평균 응답 시간</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Avg response time</p>
                   <p className="text-3xl font-bold text-gray-900">
-                    {formatResponseTime(data.summary.avgResponseTime)}
+                    {data.summary.avgResponseTime ? formatResponseTime(data.summary.avgResponseTime) : '-'}
                   </p>
                   <p className="text-xs text-success-600 mt-2">
                     <Clock className="w-3 h-3 inline mr-1" />
-                    빠른 응답
+                    Selected period
                   </p>
                 </div>
                 <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -231,12 +230,12 @@ export default function AnalyticsPage() {
           </Card>
         </div>
 
-        {/* 차트 섹션 */}
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* 일별 메시지 추이 */}
+          {/* Daily messages */}
           <Card>
             <CardHeader>
-              <CardTitle>일별 메시지 추이</CardTitle>
+              <CardTitle>Messages per day</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -268,10 +267,10 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 챗봇별 사용량 */}
+          {/* Per chatbot */}
           <Card>
             <CardHeader>
-              <CardTitle>챗봇별 메시지 수</CardTitle>
+              <CardTitle>Messages by chatbot</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -300,12 +299,12 @@ export default function AnalyticsPage() {
           </Card>
         </div>
 
-        {/* 시간대별 분포 & 인기 질문 */}
+        {/* Hourly & top questions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* 시간대별 분포 */}
+          {/* Hourly */}
           <Card>
             <CardHeader>
-              <CardTitle>시간대별 메시지 분포</CardTitle>
+              <CardTitle>Messages by hour (UTC)</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -331,10 +330,10 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* 인기 질문 TOP 10 */}
+          {/* Top questions */}
           <Card>
             <CardHeader>
-              <CardTitle>인기 질문 TOP 10</CardTitle>
+              <CardTitle>Top 10 questions</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3 max-h-[300px] overflow-y-auto">
@@ -349,13 +348,13 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-900 line-clamp-2">{item.question}</p>
-                        <p className="text-xs text-gray-500 mt-1">{item.count}회 질문됨</p>
+                        <p className="text-xs text-gray-500 mt-1">Asked {item.count} time{item.count === 1 ? '' : 's'}</p>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    데이터가 충분하지 않습니다
+                    No questions yet
                   </div>
                 )}
               </div>
@@ -363,48 +362,42 @@ export default function AnalyticsPage() {
           </Card>
         </div>
 
-        {/* 플랜 사용량 */}
+        {/* Plan usage */}
         <Card className="border-2 border-primary-200 bg-gradient-to-br from-primary-50 to-purple-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChartIcon className="w-5 h-5 text-primary-600" />
-              현재 플랜 사용량
+              Plan usage this month
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">메시지 사용량</span>
+                  <span className="text-sm font-medium text-gray-700">Messages</span>
                   <span className="text-sm font-bold text-gray-900">
-                    {data.summary.monthMessages.toLocaleString()} / 10,000
+                    {data.usage.used.toLocaleString()} / {data.usage.limit.toLocaleString()}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                  <div 
+                  <div
                     className={`h-full rounded-full transition-all ${
-                      (data.summary.monthMessages / 10000) * 100 > 90 
-                        ? 'bg-red-500' 
-                        : (data.summary.monthMessages / 10000) * 100 > 70 
-                        ? 'bg-yellow-500' 
-                        : 'bg-green-500'
+                      usagePct > 90 ? 'bg-red-500' : usagePct > 70 ? 'bg-yellow-500' : 'bg-green-500'
                     }`}
-                    style={{ width: `${Math.min((data.summary.monthMessages / 10000) * 100, 100)}%` }}
+                    style={{ width: `${usagePct}%` }}
                   />
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
-                  {((data.summary.monthMessages / 10000) * 100).toFixed(1)}% 사용 중
-                </p>
+                <p className="text-xs text-gray-600 mt-2">{usagePct.toFixed(1)}% used</p>
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                 <div>
-                  <p className="text-sm text-gray-600">현재 플랜</p>
-                  <p className="text-lg font-bold text-gray-900">Pro Plan</p>
+                  <p className="text-sm text-gray-600">Current plan</p>
+                  <p className="text-lg font-bold text-gray-900">{data.usage.planName}</p>
                 </div>
-                <button className="px-6 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors">
-                  업그레이드
-                </button>
+                <Link href="/dashboard/settings?tab=billing" className="px-6 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors">
+                  Upgrade
+                </Link>
               </div>
             </div>
           </CardContent>

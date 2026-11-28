@@ -3,63 +3,28 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button, Input, Alert } from '@/components/ui';
-import { Bot, Mail, ArrowRight, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Bot, Mail, ArrowRight, ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [tempPassword, setTempPassword] = useState('');
-
-  // 랜덤 임시 비밀번호 생성 (8자)
-  const generateTempPassword = (): string => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-    let password = '';
-    for (let i = 0; i < 8; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  };
-
+  // Sends a Supabase password-reset email that links back to /reset-password
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccess(false);
     setLoading(true);
-
-    try {
-      // localStorage에서 사용자 찾기
-      const usersData = localStorage.getItem('users');
-      if (!usersData) {
-        setError('No users found. Please sign up first.');
-        setLoading(false);
-        return;
-      }
-
-      const users = JSON.parse(usersData);
-      const userIndex = users.findIndex((u: any) => u.email === email);
-
-      if (userIndex === -1) {
-        setError('Email not found. Please check your email or sign up.');
-        setLoading(false);
-        return;
-      }
-
-      // 임시 비밀번호 생성
-      const newTempPassword = generateTempPassword();
-      
-      // localStorage 업데이트
-      users[userIndex].password = newTempPassword;
-      localStorage.setItem('users', JSON.stringify(users));
-
-      setTempPassword(newTempPassword);
-      setSuccess(true);
-      setLoading(false);
-    } catch (err) {
-      setError('An error occurred. Please try again.');
-      setLoading(false);
+    const { error } = await createClient().auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+      return;
     }
+    setSuccess(true);
   };
 
   return (
@@ -103,12 +68,12 @@ export default function ForgotPasswordPage() {
 
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              {success ? 'Check Your Password' : 'Reset Password'}
+              {success ? 'Check Your Email' : 'Reset Password'}
             </h2>
             <p className="text-gray-600">
               {success 
-                ? 'Your password has been reset successfully'
-                : 'Enter your email to receive a temporary password'
+                ? 'If an account exists for this email, we sent a reset link'
+                : 'Enter your email and we will send you a reset link'
               }
             </p>
           </div>
@@ -154,20 +119,8 @@ export default function ForgotPasswordPage() {
             </form>
           ) : (
             <div className="space-y-6">
-              <Alert variant="success" title="Password Reset Successful!">
-                <div className="mt-3">
-                  <p className="mb-3">Your temporary password is:</p>
-                  <div className="p-4 bg-white rounded-lg border-2 border-success-300">
-                    <div className="font-mono text-2xl font-bold text-gray-900 text-center tracking-wider">
-                      {tempPassword}
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm">
-                    Please save this password and use it to sign in.
-                    <br />
-                    <span className="text-xs text-gray-600">(In production, this will be sent to your email)</span>
-                  </p>
-                </div>
+              <Alert variant="success" title="Reset link sent">
+                Check your inbox (and spam folder) for an email with a link to set a new password.
               </Alert>
 
               <Link href="/login">

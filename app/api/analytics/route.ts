@@ -1,195 +1,185 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getPlan } from "@/lib/plans";
 
+const DAY = 24 * 60 * 60 * 1000;
+
+// GET /api/analytics?period=7|30|90[&chatbotId=...] — stats for the logged-in user's chatbots only
 export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams
-    const period = searchParams.get('period') || '30' // 기본 30일
-    const chatbotId = searchParams.get('chatbotId') // 특정 챗봇 필터
+  const { supabase, user } = await getAuthUser();
+  if (!user)
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 },
+    );
 
-    const supabase = await createClient()
+  const period = [7, 30, 90].includes(
+    Number(request.nextUrl.searchParams.get("period")),
+  )
+    ? Number(request.nextUrl.searchParams.get("period"))
+    : 30;
+  const filterId = request.nextUrl.searchParams.get("chatbotId");
 
-    // 현재 날짜 기준 계산
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const startOfPeriod = new Date(now.getTime() - parseInt(period) * 24 * 60 * 60 * 1000)
+  // 1. The user's chatbots (RLS-scoped) define which message logs may be read
+  const { data: chatbots, error } = await supabase
+    .from("chatbots")
+    .select("id, name, status, created_at")
+    .eq("user_id", user.id);
+  if (error)
+    return NextResponse.json(
+      { error: "Failed to load analytics" },
+      { status: 500 },
+    );
 
-    // 1. 총 메시지 수
-    let totalMessagesQuery = supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
+  if (filterId && !chatbots.some((c) => c.id === filterId)) {
+    return NextResponse.json({ error: "Chatbot not found" }, { status: 404 });
+  }
+  const ids = filterId ? [filterId] : chatbots.map((c) => c.id);
 
-    if (chatbotId) {
-      totalMessagesQuery = totalMessagesQuery.eq('chatbot_id', chatbotId)
+  const now = new Date();
+  const startOfMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const startOfPeriod = new Date(now.getTime() - period * DAY);
+
+  // 2. Message logs (service role, restricted to the ids above)
+  let totalMessages = 0;
+  let monthMessages = 0;
+  let rows: {
+    chatbot_id: string;
+    session_id: string;
+    question: string | null;
+    response_ms: number | null;
+    created_at: string;
+  }[] = [];
+  if (ids.length > 0) {
+    const [total, month, periodRows] = await Promise.all([
+      supabaseAdmin
+        .from("session_messages")
+        .select("id", { count: "exact", head: true })
+        .in("chatbot_id", ids),
+      supabaseAdmin
+        .from("session_messages")
+        .select("id", { count: "exact", head: true })
+        .in("chatbot_id", ids)
+        .gte("created_at", startOfMonth.toISOString()),
+      supabaseAdmin
+        .from("session_messages")
+        .select("chatbot_id, session_id, question, response_ms, created_at")
+        .in("chatbot_id", ids)
+        .gte("created_at", startOfPeriod.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(20000),
+    ]);
+    if (total.error || month.error || periodRows.error) {
+      console.error(
+        "Analytics query error:",
+        total.error || month.error || periodRows.error,
+      );
+      return NextResponse.json(
+        { error: "Failed to load analytics" },
+        { status: 500 },
+      );
     }
+    totalMessages = total.count ?? 0;
+    monthMessages = month.count ?? 0;
+    rows = periodRows.data;
+  }
 
-    const { count: totalMessages } = await totalMessagesQuery
+  // 3. Aggregations
+  const daily = new Map<string, number>();
+  for (
+    let t = startOfPeriod.getTime() + DAY;
+    t <= now.getTime() + 1;
+    t += DAY
+  ) {
+    daily.set(new Date(t).toISOString().slice(0, 10), 0);
+  }
+  const hourly = Array(24).fill(0);
+  const perBot = new Map<string, number>();
+  const questions = new Map<string, number>();
+  const sessions = new Set<string>();
+  let responseSum = 0;
+  let responseCount = 0;
 
-    // 2. 이번 달 메시지
-    let monthMessagesQuery = supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', startOfMonth.toISOString())
-
-    if (chatbotId) {
-      monthMessagesQuery = monthMessagesQuery.eq('chatbot_id', chatbotId)
+  for (const r of rows) {
+    const day = r.created_at.slice(0, 10);
+    if (daily.has(day)) daily.set(day, daily.get(day)! + 1);
+    hourly[new Date(r.created_at).getUTCHours()]++;
+    perBot.set(r.chatbot_id, (perBot.get(r.chatbot_id) || 0) + 1);
+    sessions.add(r.session_id);
+    if (r.response_ms) {
+      responseSum += r.response_ms;
+      responseCount++;
     }
+    const q = r.question?.trim().toLowerCase().slice(0, 100);
+    if (q) questions.set(q, (questions.get(q) || 0) + 1);
+  }
 
-    const { count: monthMessages } = await monthMessagesQuery
+  // 4. Plan usage (rolling monthly window; mirrors check_and_increment_usage)
+  const { data: profile } = await supabaseAdmin
+    .from("users")
+    .select("plan, messages_used, message_limit, usage_reset_at")
+    .eq("id", user.id)
+    .maybeSingle();
+  const plan = getPlan(profile?.plan);
+  const resetAt = profile?.usage_reset_at
+    ? new Date(profile.usage_reset_at)
+    : now;
+  const windowExpired =
+    new Date(resetAt).setUTCMonth(resetAt.getUTCMonth() + 1) <= now.getTime();
 
-    // 3. 활성 챗봇 수
-    const { count: activeChatbots } = await supabase
-      .from('chatbots')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_active', true)
-
-    // 4. 평균 응답 시간 (가정: response_time 필드가 있다고 가정, 없으면 계산 필요)
-    let avgResponseQuery = supabase
-      .from('messages')
-      .select('created_at')
-      .gte('created_at', startOfPeriod.toISOString())
-      .order('created_at', { ascending: true })
-
-    if (chatbotId) {
-      avgResponseQuery = avgResponseQuery.eq('chatbot_id', chatbotId)
-    }
-
-    const { data: responseData } = await avgResponseQuery
-    
-    // 간단한 평균 응답 시간 계산 (실제로는 더 복잡한 로직 필요)
-    const avgResponseTime = responseData && responseData.length > 0 
-      ? Math.round(Math.random() * 2000 + 1000) // 임시: 1-3초 사이 랜덤
-      : 0
-
-    // 5. 일별 메시지 수
-    let dailyMessagesQuery = supabase
-      .from('messages')
-      .select('created_at')
-      .gte('created_at', startOfPeriod.toISOString())
-      .order('created_at', { ascending: true })
-
-    if (chatbotId) {
-      dailyMessagesQuery = dailyMessagesQuery.eq('chatbot_id', chatbotId)
-    }
-
-    const { data: dailyData } = await dailyMessagesQuery
-
-    // 날짜별로 그룹화
-    const dailyMessages: { [key: string]: number } = {}
-    if (dailyData) {
-      dailyData.forEach((msg: any) => {
-        const date = new Date(msg.created_at).toISOString().split('T')[0]
-        dailyMessages[date] = (dailyMessages[date] || 0) + 1
-      })
-    }
-
-    // 차트용 데이터로 변환
-    const dailyChart = Object.entries(dailyMessages)
-      .map(([date, count]) => ({
+  const nameOf = new Map(chatbots.map((c) => [c.id, c.name]));
+  return NextResponse.json({
+    summary: {
+      totalChatbots: chatbots.length,
+      activeChatbots: chatbots.filter((c) => c.status === "active").length,
+      chatbotsThisMonth: chatbots.filter(
+        (c) => new Date(c.created_at) >= startOfMonth,
+      ).length,
+      totalMessages,
+      monthMessages,
+      periodMessages: rows.length,
+      uniqueVisitors: sessions.size,
+      avgResponseTime: responseCount
+        ? Math.round(responseSum / responseCount)
+        : 0,
+    },
+    charts: {
+      daily: [...daily].map(([date, count]) => ({
         date,
         count,
-        label: new Date(date).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-
-    // 6. 챗봇별 사용량
-    let chatbotUsageQuery = supabase
-      .from('messages')
-      .select('chatbot_id, chatbots(name)')
-      .gte('created_at', startOfPeriod.toISOString())
-
-    if (chatbotId) {
-      chatbotUsageQuery = chatbotUsageQuery.eq('chatbot_id', chatbotId)
-    }
-
-    const { data: chatbotUsageData } = await chatbotUsageQuery
-
-    // 챗봇별로 그룹화
-    const chatbotUsage: { [key: string]: { name: string; count: number } } = {}
-    if (chatbotUsageData) {
-      chatbotUsageData.forEach((msg: any) => {
-        const id = msg.chatbot_id
-        const name = msg.chatbots?.name || 'Unknown'
-        if (!chatbotUsage[id]) {
-          chatbotUsage[id] = { name, count: 0 }
-        }
-        chatbotUsage[id].count++
-      })
-    }
-
-    const chatbotChart = Object.values(chatbotUsage)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10) // 상위 10개
-
-    // 7. 인기 질문 TOP 10
-    let topQuestionsQuery = supabase
-      .from('messages')
-      .select('content')
-      .gte('created_at', startOfPeriod.toISOString())
-      .eq('role', 'user') // 사용자 메시지만
-      .limit(1000) // 최근 1000개만 가져와서 분석
-
-    if (chatbotId) {
-      topQuestionsQuery = topQuestionsQuery.eq('chatbot_id', chatbotId)
-    }
-
-    const { data: questionsData } = await topQuestionsQuery
-
-    // 질문 빈도 계산
-    const questionFrequency: { [key: string]: number } = {}
-    if (questionsData) {
-      questionsData.forEach((msg: any) => {
-        const q = msg.content?.substring(0, 100) || '' // 첫 100자만
-        if (q) {
-          questionFrequency[q] = (questionFrequency[q] || 0) + 1
-        }
-      })
-    }
-
-    const topQuestions = Object.entries(questionFrequency)
+        label: new Date(date + "T00:00:00Z").toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }),
+      })),
+      chatbots: [...perBot]
+        .map(([id, count]) => ({
+          id,
+          name: nameOf.get(id) || "Deleted chatbot",
+          count,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10),
+      hourly: hourly.map((count, hour) => ({
+        hour,
+        count,
+        label: `${String(hour).padStart(2, "0")}:00`,
+      })),
+    },
+    topQuestions: [...questions]
       .map(([question, count]) => ({ question, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
-
-    // 8. 시간대별 분포
-    const hourlyDistribution: { [key: number]: number } = {}
-    if (dailyData) {
-      dailyData.forEach((msg: any) => {
-        const hour = new Date(msg.created_at).getHours()
-        hourlyDistribution[hour] = (hourlyDistribution[hour] || 0) + 1
-      })
-    }
-
-    const hourlyChart = Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      count: hourlyDistribution[hour] || 0,
-      label: `${hour.toString().padStart(2, '0')}:00`
-    }))
-
-    // 응답 반환
-    return NextResponse.json({
-      summary: {
-        totalMessages: totalMessages || 0,
-        monthMessages: monthMessages || 0,
-        activeChatbots: activeChatbots || 0,
-        avgResponseTime
-      },
-      charts: {
-        daily: dailyChart,
-        chatbots: chatbotChart,
-        hourly: hourlyChart
-      },
-      topQuestions
-    })
-
-  } catch (error) {
-    console.error('Analytics API 오류:', error)
-    return NextResponse.json(
-      { 
-        error: '통계 데이터를 가져오는 중 오류가 발생했습니다',
-        details: error instanceof Error ? error.message : '알 수 없는 오류'
-      },
-      { status: 500 }
-    )
-  }
+      .slice(0, 10),
+    usage: {
+      plan: profile?.plan || "free",
+      planName: plan.name,
+      used: windowExpired ? 0 : (profile?.messages_used ?? 0),
+      limit: profile?.message_limit ?? plan.messages,
+      chatbotLimit: Number.isFinite(plan.chatbots) ? plan.chatbots : null,
+    },
+  });
 }

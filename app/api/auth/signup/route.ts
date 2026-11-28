@@ -1,68 +1,56 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
+const signupSchema = z.object({
+  name: z.string().trim().min(1, "Please enter your name").max(100),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Please enter a valid email address")
+    .max(254),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(72, "Password is too long"),
 });
 
+// Creates the account server-side (pre-confirmed, so customers aren't blocked by email delivery).
+// The browser then signs in with the same credentials to get a session cookie.
 export async function POST(request: NextRequest) {
-  try {
-    const { name, email, password } = await request.json();
-
-    // Validate input
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: 'Password must be at least 8 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Create user in Supabase Auth
-    const { data, error } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Auto-confirm for testing
-      user_metadata: {
-        full_name: name
-      }
-    });
-
-    if (error) {
-      console.error('Supabase signup error:', error);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
-    }
-
-    // User created successfully
-    // The trigger will automatically create a record in public.users
-    return NextResponse.json({
-      success: true,
-      user: {
-        id: data.user.id,
-        email: data.user.email
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Signup error:', error);
+  const parsed = signupSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: parsed.error.issues[0]?.message || "Invalid input" },
+      { status: 400 },
     );
   }
+  const { name, email, password } = parsed.data;
+
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: name },
+  });
+
+  if (error) {
+    const exists = /already|registered|exists/i.test(error.message);
+    if (!exists) console.error("Signup error:", error.message);
+    return NextResponse.json(
+      {
+        error: exists
+          ? "An account with this email already exists. Please sign in."
+          : "Could not create account. Please try again.",
+      },
+      { status: exists ? 409 : 400 },
+    );
+  }
+
+  // public.users profile is created by the on_auth_user_created trigger
+  return NextResponse.json({
+    success: true,
+    user: { id: data.user.id, email: data.user.email },
+  });
 }

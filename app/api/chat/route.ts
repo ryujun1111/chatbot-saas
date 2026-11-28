@@ -1,204 +1,185 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { openaiClient, OPENAI_EMBEDDING_MODEL, createChatCompletion } from '@/lib/ai-client'
-import { checkSessionRateLimit, checkIPRateLimit, recordMessage, getClientIP } from '@/lib/rate-limit'
+import { NextRequest } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import {
+  createEmbeddings,
+  createChatCompletion,
+  type ChatMessage,
+} from "@/lib/ai-client";
+import {
+  checkChatRateLimit,
+  recordMessage,
+  getClientIP,
+} from "@/lib/rate-limit";
+import { corsJson, corsPreflight } from "@/lib/cors";
 
-// Service Role client for bypassing RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Public endpoint used by the embeddable widget (cross-origin)
+export const maxDuration = 30;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function OPTIONS() {
+  return corsPreflight();
+}
+
+// GET /api/chat?chatbotId=... → public widget config (whitelisted fields only)
+export async function GET(request: NextRequest) {
+  const chatbotId = request.nextUrl.searchParams.get("chatbotId") || "";
+  if (!UUID_RE.test(chatbotId))
+    return corsJson({ error: "Invalid chatbotId" }, 400);
+
+  const { data } = await supabaseAdmin
+    .from("chatbots")
+    .select("name, color, initial_message, status")
+    .eq("id", chatbotId)
+    .maybeSingle();
+
+  if (!data || data.status !== "active")
+    return corsJson({ error: "Chatbot not found" }, 404);
+  return corsJson({
+    name: data.name,
+    color: data.color,
+    initialMessage: data.initial_message,
+  });
+}
+
+// POST /api/chat → RAG answer
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   try {
-    const body = await request.json()
-    const { chatbotId, message, sessionId } = body
+    const body = await request.json().catch(() => null);
+    const chatbotId = body?.chatbotId;
+    const message =
+      typeof body?.message === "string" ? body.message.trim() : "";
+    const sessionId =
+      typeof body?.sessionId === "string" ? body.sessionId.slice(0, 100) : "";
 
-    if (!chatbotId || !message) {
-      return NextResponse.json(
-        { error: 'chatbotId and message are required' },
-        { status: 400 }
-      )
-    }
+    // 1. Input validation
+    if (typeof chatbotId !== "string" || !UUID_RE.test(chatbotId))
+      return corsJson({ error: "Invalid chatbotId" }, 400);
+    if (!message) return corsJson({ error: "Message is required" }, 400);
+    if (message.length > 2000)
+      return corsJson({ error: "Message too long (max 2000 characters)" }, 400);
+    if (!sessionId) return corsJson({ error: "sessionId is required" }, 400);
 
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: 'sessionId is required' },
-        { status: 400 }
-      )
-    }
+    // Last few turns for follow-up questions (client-supplied, so strictly capped)
+    const history: ChatMessage[] = Array.isArray(body?.history)
+      ? body.history
+          .filter(
+            (m: any) =>
+              (m?.role === "user" || m?.role === "assistant") &&
+              typeof m?.content === "string",
+          )
+          .slice(-6)
+          .map((m: any) => ({
+            role: m.role,
+            content: m.content.slice(0, 1000),
+          }))
+      : [];
 
-    if (message.length > 2000) {
-      return NextResponse.json(
-        { error: 'Message too long (max 2000 characters)' },
-        { status: 400 }
-      )
-    }
+    // 2. Abuse protection before any paid API call
+    const ip = getClientIP(request);
+    const limit = await checkChatRateLimit(sessionId, ip);
+    if (!limit.allowed) return corsJson({ error: limit.reason }, 429);
 
-    // 1. Rate limiting FIRST (session and IP-based)
-    const clientIP = getClientIP(request);
-    
-    // Check session-based rate limit (50 messages per 24 hours)
-    const sessionLimit = await checkSessionRateLimit(sessionId, 50);
-    if (!sessionLimit.allowed) {
-      return NextResponse.json(
-        { 
-          error: sessionLimit.reason || 'Session message limit exceeded',
-          remaining: sessionLimit.remaining,
-          resetAt: sessionLimit.resetAt
-        },
-        { status: 429 }
-      );
-    }
-    
-    // Check IP-based rate limit (100 messages per hour)
-    const ipLimit = await checkIPRateLimit(clientIP, 100);
-    if (!ipLimit.allowed) {
-      return NextResponse.json(
-        { 
-          error: ipLimit.reason || 'Too many requests from this IP',
-          remaining: ipLimit.remaining,
-          resetAt: ipLimit.resetAt
-        },
-        { status: 429 }
-      );
-    }
+    // 3. Chatbot must exist and be active
+    const { data: chatbot } = await supabaseAdmin
+      .from("chatbots")
+      .select("user_id, name, model, temperature, max_tokens, status")
+      .eq("id", chatbotId)
+      .maybeSingle();
+    if (!chatbot) return corsJson({ error: "Chatbot not found" }, 404);
+    if (chatbot.status !== "active")
+      return corsJson({ error: "This chatbot is currently offline." }, 403);
 
-    // 2. Get chatbot and owner (Service Role bypasses RLS)
-    const { data: chatbot, error: chatbotError } = await supabaseAdmin
-      .from('chatbots')
-      .select('user_id, name')
-      .eq('id', chatbotId)
-      .single()
-
-    if (chatbotError || !chatbot) {
-      return NextResponse.json(
-        { error: 'Chatbot not found' },
-        { status: 404 }
-      )
-    }
-
-    const ownerId = chatbot.user_id
-
-    // 3. Atomic quota check and usage increment
-    const { data: usageResult, error: usageError } = await supabaseAdmin.rpc(
-      'check_and_increment_usage',
-      { p_user_id: ownerId }
-    )
-
+    // 4. Owner's monthly plan quota (atomic check + increment)
+    const { data: usage, error: usageError } = await supabaseAdmin.rpc(
+      "check_and_increment_usage",
+      {
+        p_user_id: chatbot.user_id,
+      },
+    );
+    const quota = Array.isArray(usage) ? usage[0] : usage;
     if (usageError) {
-      console.error('Usage check failed:', usageError)
-      return NextResponse.json(
-        { error: 'Failed to check usage quota' },
-        { status: 500 }
-      )
+      console.error("Usage check failed:", usageError);
+      return corsJson(
+        { error: "Service temporarily unavailable. Please try again." },
+        503,
+      );
     }
-
-    if (!usageResult || !usageResult.can_use) {
-      return NextResponse.json(
-        { 
-          error: 'Monthly message limit reached',
-          limit: usageResult?.current_limit || 0,
-          used: usageResult?.current_used || 0
+    if (!quota?.can_use) {
+      return corsJson(
+        {
+          error:
+            "This chatbot has reached its monthly message limit. Please contact the site owner.",
         },
-        { status: 429 }
-      )
+        429,
+      );
     }
 
-    // 4. Convert question to embedding
-    const embeddingResponse = await openaiClient.embeddings.create({
-      model: OPENAI_EMBEDDING_MODEL,
-      input: message,
-    })
-    const questionEmbedding = embeddingResponse.data[0].embedding
-
-    // 5. Vector search
+    // 5. Retrieve relevant knowledge (vector search scoped to this chatbot)
+    const [questionEmbedding] = await createEmbeddings([message]);
     const { data: documents, error: searchError } = await supabaseAdmin.rpc(
-      'match_documents',
+      "match_documents",
       {
         query_embedding: questionEmbedding,
         match_threshold: 0.3,
-        match_count: 3,
+        match_count: 5,
         p_chatbot_id: chatbotId,
-      }
-    )
-
+      },
+    );
     if (searchError) {
-      console.error('Vector search error:', searchError)
-      return NextResponse.json(
-        { error: 'Failed to search documents' },
-        { status: 500 }
-      )
+      console.error("Vector search error:", searchError);
+      return corsJson(
+        { error: "Service temporarily unavailable. Please try again." },
+        503,
+      );
     }
 
-    // No results found
-    if (!documents || documents.length === 0) {
-      return NextResponse.json({
-        answer: "I'm sorry, I couldn't find relevant information to answer your question. Could you try rephrasing it or ask something else?",
-        sources: [],
-        usage: {
-          used: usageResult.current_used,
-          limit: usageResult.current_limit
-        }
-      })
-    }
+    const context = (documents || [])
+      .map((d: any) => d.content)
+      .join("\n\n---\n\n");
+    const sources = [
+      ...new Set((documents || []).map((d: any) => d.url).filter(Boolean)),
+    ] as string[];
 
-    // 6. Build context
-    const context = documents
-      .map((doc: any) => doc.content)
-      .join('\n\n---\n\n')
-
-    const sources = documents.map((doc: any) => doc.source || doc.url || '')
-
-    // 7. Generate answer
+    // 6. Generate the answer, grounded in the retrieved context
     const answer = await createChatCompletion({
+      model: chatbot.model,
+      temperature: chatbot.temperature,
+      maxTokens: Math.min(chatbot.max_tokens || 500, 2000),
       messages: [
         {
-          role: 'system',
-          content: `You are a helpful AI assistant.
-Answer the user's question accurately and kindly based on the given context.
-Do not make up information that is not in the context. If you don't know, say so.
-Answer in the same language as the user's question.
-Be specific and clear in your responses.
+          role: "system",
+          content: `You are "${chatbot.name}", a helpful assistant on a business website.
+Answer using ONLY the information in the context below. If the answer is not in the context, say you don't have that information and suggest contacting the business directly. Never invent prices, policies or contact details.
+You may respond to greetings and small talk briefly and politely.
+Always answer in the same language as the user's latest message. Be concise and specific.
 
 Context:
-${context}`,
+${context || "(no relevant information found)"}`,
         },
-        {
-          role: 'user',
-          content: message,
-        },
+        ...history,
+        { role: "user", content: message },
       ],
-      temperature: 0.7,
-      maxTokens: 500,
-    })
+    });
 
-    // 8. Record message for rate limiting (required)
-    await recordMessage(sessionId, chatbotId, clientIP);
-
-    // 9. Return response
-    return NextResponse.json({
+    // 7. Log for rate limiting, conversation history and analytics
+    await recordMessage({
+      sessionId,
+      chatbotId,
+      ip,
+      question: message,
       answer,
-      sources: sources.filter((s: string) => s),
-      usage: {
-        used: usageResult.current_used,
-        limit: usageResult.current_limit
-      }
-    })
-  } catch (error) {
-    console.error('API error:', error)
-    
-    if (error instanceof Error && error.message.includes('API')) {
-      return NextResponse.json(
-        { error: 'AI service temporarily unavailable. Please try again.' },
-        { status: 503 }
-      )
-    }
+      responseMs: Date.now() - startedAt,
+    });
 
-    return NextResponse.json(
-      { error: 'Failed to generate response' },
-      { status: 500 }
-    )
+    return corsJson({ answer, sources });
+  } catch (error) {
+    console.error("Chat API error:", error);
+    return corsJson(
+      { error: "Failed to generate a response. Please try again." },
+      500,
+    );
   }
 }
-

@@ -1,259 +1,142 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { getCurrentUser, signOut } from '@/lib/auth';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import PaddleButton from "@/components/PaddleButton";
+import { PLANS } from "@/lib/plans";
 
-type TabType = 'profile' | 'account' | 'billing' | 'api-keys';
+type TabType = "profile" | "account" | "billing";
 
-interface UserSettings {
-  name: string;
+interface AccountInfo {
   email: string;
-  currentPlan: 'free' | 'starter' | 'pro' | 'enterprise';
-  apiKeys: Array<{
-    id: string;
-    name: string;
-    key: string;
-    createdAt: string;
-  }>;
+  name: string;
+  plan: string;
+  planName: string;
+  subscriptionStatus: string;
+  hasSubscription: boolean;
+  usage: {
+    messagesUsed: number;
+    messageLimit: number;
+    chatbots: number;
+    chatbotLimit: number | null;
+    resetsAt: string | null;
+  };
 }
 
+const PAID_PLANS = ["starter", "growth", "agency"] as const;
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('profile');
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<UserSettings>({
-    name: '',
-    email: '',
-    currentPlan: 'free',
-    apiKeys: []
-  });
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>("profile");
+  const [account, setAccount] = useState<AccountInfo | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const router = useRouter();
-
-  // Form states
-  const [profileForm, setProfileForm] = useState({
-    name: '',
-    email: '',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [name, setName] = useState("");
+  const [passwords, setPasswords] = useState({
+    current: "",
+    next: "",
+    confirm: "",
   });
 
-  const [newApiKey, setNewApiKey] = useState({
-    name: '',
-    visible: false
-  });
+  const showNotice = (type: "success" | "error", text: string) => {
+    setNotice({ type, text });
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  const loadAccount = async () => {
+    const res = await fetch("/api/settings");
+    if (res.status === 401)
+      return router.replace("/login?next=/dashboard/settings");
+    const data = await res.json();
+    setAccount(data);
+    setName(data.name);
+  };
 
   useEffect(() => {
-    checkAuth();
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab === "billing" || tab === "account") setActiveTab(tab);
+    if (params.get("checkout") === "success") {
+      showNotice(
+        "success",
+        "Payment received! Your plan will update in a few seconds.",
+      );
+      setTimeout(loadAccount, 5000); // webhook usually lands within seconds
+    }
+    loadAccount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const checkAuth = () => {
-    const user = getCurrentUser();
-    
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-    
-    setUserEmail(user.email);
-    loadSettings(user.email);
-    setLoading(false);
-  };
-
-  const loadSettings = (email: string) => {
-    // Load from localStorage
-    const savedSettings = localStorage.getItem(`settings_${email}`);
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings);
-      setSettings(parsed);
-      setProfileForm({
-        name: parsed.name || '',
-        email: parsed.email || email,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-    } else {
-      // Initialize default settings
-      const defaultSettings: UserSettings = {
-        name: email.split('@')[0],
-        email: email,
-        currentPlan: 'free',
-        apiKeys: []
-      };
-      setSettings(defaultSettings);
-      setProfileForm({
-        name: defaultSettings.name,
-        email: email,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-    }
-  };
-
-  const saveSettings = async () => {
+  // Name lives in Supabase Auth user metadata
+  const saveProfile = async () => {
     setIsSaving(true);
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const updatedSettings = {
-        ...settings,
-        name: profileForm.name,
-        email: profileForm.email
-      };
-      
-      localStorage.setItem(`settings_${userEmail}`, JSON.stringify(updatedSettings));
-      setSettings(updatedSettings);
-      
-      showSuccessMessage('Settings saved successfully!');
-    } catch (error) {
-      alert('Failed to save settings');
-    } finally {
-      setIsSaving(false);
-    }
+    const { error } = await createClient().auth.updateUser({
+      data: { full_name: name.trim() },
+    });
+    setIsSaving(false);
+    if (error) showNotice("error", error.message);
+    else showNotice("success", "Profile saved");
   };
 
+  // Re-verify the current password, then set the new one
   const changePassword = async () => {
-    if (!profileForm.currentPassword || !profileForm.newPassword) {
-      alert('Please fill all password fields');
-      return;
-    }
-
-    if (profileForm.newPassword !== profileForm.confirmPassword) {
-      alert('New passwords do not match');
-      return;
-    }
-
-    if (profileForm.newPassword.length < 6) {
-      alert('Password must be at least 6 characters');
-      return;
-    }
+    if (!passwords.current || !passwords.next)
+      return showNotice("error", "Please fill in all password fields");
+    if (passwords.next !== passwords.confirm)
+      return showNotice("error", "New passwords do not match");
+    if (passwords.next.length < 8)
+      return showNotice("error", "Password must be at least 8 characters");
 
     setIsSaving(true);
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Update password in localStorage
-      const usersJson = localStorage.getItem('chatbot_saas_users');
-      if (usersJson) {
-        const users = JSON.parse(usersJson);
-        const userIndex = users.findIndex((u: any) => u.email === userEmail);
-        if (userIndex !== -1) {
-          if (users[userIndex].password !== profileForm.currentPassword) {
-            alert('Current password is incorrect');
-            setIsSaving(false);
-            return;
-          }
-          users[userIndex].password = profileForm.newPassword;
-          localStorage.setItem('chatbot_saas_users', JSON.stringify(users));
-        }
-      }
-      
-      setProfileForm({
-        ...profileForm,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-      
-      showSuccessMessage('Password changed successfully!');
-    } catch (error) {
-      alert('Failed to change password');
-    } finally {
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: account!.email,
+      password: passwords.current,
+    });
+    if (authError) {
       setIsSaving(false);
+      return showNotice("error", "Current password is incorrect");
     }
+    const { error } = await supabase.auth.updateUser({
+      password: passwords.next,
+    });
+    setIsSaving(false);
+    if (error) return showNotice("error", error.message);
+    setPasswords({ current: "", next: "", confirm: "" });
+    showNotice("success", "Password changed");
   };
 
-  const generateApiKey = async () => {
-    if (!newApiKey.name.trim()) {
-      alert('Please enter a name for the API key');
-      return;
-    }
-
-    const key = 'sk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    
-    const updatedSettings = {
-      ...settings,
-      apiKeys: [
-        ...settings.apiKeys,
-        {
-          id: Date.now().toString(),
-          name: newApiKey.name,
-          key: key,
-          createdAt: new Date().toISOString()
-        }
-      ]
-    };
-    
-    localStorage.setItem(`settings_${userEmail}`, JSON.stringify(updatedSettings));
-    setSettings(updatedSettings);
-    setNewApiKey({ name: '', visible: false });
-    
-    showSuccessMessage('API key generated successfully!');
-  };
-
-  const deleteApiKey = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this API key?')) {
-      return;
-    }
-
-    const updatedSettings = {
-      ...settings,
-      apiKeys: settings.apiKeys.filter(k => k.id !== id)
-    };
-    
-    localStorage.setItem(`settings_${userEmail}`, JSON.stringify(updatedSettings));
-    setSettings(updatedSettings);
-    
-    showSuccessMessage('API key deleted successfully!');
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showSuccessMessage('Copied to clipboard!');
+  const openBillingPortal = async () => {
+    setIsSaving(true);
+    const res = await fetch("/api/paddle/portal", { method: "POST" });
+    const data = await res.json();
+    setIsSaving(false);
+    if (res.ok && data.url) window.location.href = data.url;
+    else showNotice("error", data.error || "Billing portal is unavailable");
   };
 
   const deleteAccount = async () => {
     setShowDeleteModal(false);
-    
-    // Remove user data
-    localStorage.removeItem(`settings_${userEmail}`);
-    
-    // Remove user from users list
-    const usersJson = localStorage.getItem('chatbot_saas_users');
-    if (usersJson) {
-      const users = JSON.parse(usersJson);
-      const updatedUsers = users.filter((u: any) => u.email !== userEmail);
-      localStorage.setItem('chatbot_saas_users', JSON.stringify(updatedUsers));
-    }
-    
-    // Sign out
-    signOut();
-    router.push('/');
+    const res = await fetch("/api/settings", { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok)
+      return showNotice("error", data.error || "Failed to delete account");
+    await createClient().auth.signOut();
+    router.replace("/");
   };
 
-  const showSuccessMessage = (message: string) => {
-    setSuccessMessage(message);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const handleLogout = async () => {
+    await createClient().auth.signOut();
+    router.replace("/login");
+    router.refresh();
   };
 
-  const handleLogout = () => {
-    signOut();
-    router.push('/');
-  };
-
-  if (loading) {
+  if (!account) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -264,14 +147,25 @@ export default function SettingsPage() {
     );
   }
 
+  const pct = (used: number, limit: number | null) =>
+    limit ? Math.min(100, (used / limit) * 100) : 0;
+  const inputClass =
+    "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900";
+  const tabClass = (tab: TabType) =>
+    `px-4 md:px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+      activeTab === tab
+        ? "border-blue-500 text-blue-600"
+        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+    }`;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap gap-3 justify-between items-center">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push("/dashboard")}
               className="text-gray-600 hover:text-gray-900 transition-colors"
             >
               ← Back to Dashboard
@@ -279,7 +173,9 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-700 font-medium">{userEmail}</span>
+            <span className="hidden sm:inline text-sm text-gray-700 font-medium">
+              {account.email}
+            </span>
             <button
               onClick={handleLogout}
               className="bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors"
@@ -290,214 +186,258 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
-          ✓ {successMessage}
+      {notice && (
+        <div
+          role="status"
+          className={`fixed top-4 right-4 left-4 sm:left-auto ${notice.type === "success" ? "bg-green-500" : "bg-red-500"} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in`}
+        >
+          {notice.type === "success" ? "✓ " : ""}
+          {notice.text}
         </div>
       )}
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          {/* Tabs */}
+          {/* Tabs (div, not <nav>, to avoid the global dark nav style) */}
           <div className="border-b border-gray-200">
-            <nav className="flex -mb-px">
+            <div className="flex -mb-px overflow-x-auto" role="tablist">
               <button
-                onClick={() => setActiveTab('profile')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'profile'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                onClick={() => setActiveTab("profile")}
+                className={tabClass("profile")}
               >
                 Profile
               </button>
               <button
-                onClick={() => setActiveTab('account')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'account'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                onClick={() => setActiveTab("account")}
+                className={tabClass("account")}
               >
-                Account
+                Plan &amp; Usage
               </button>
               <button
-                onClick={() => setActiveTab('billing')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'billing'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                onClick={() => setActiveTab("billing")}
+                className={tabClass("billing")}
               >
                 Billing
               </button>
-              <button
-                onClick={() => setActiveTab('api-keys')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'api-keys'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                API Keys
-              </button>
-            </nav>
+            </div>
           </div>
 
-          {/* Tab Content */}
-          <div className="p-8">
-            {/* Profile Tab */}
-            {activeTab === 'profile' && (
+          <div className="p-5 md:p-8">
+            {/* Profile */}
+            {activeTab === "profile" && (
               <div className="max-w-2xl">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">Profile Settings</h2>
-                
+                <h2 className="text-xl font-bold text-gray-900 mb-6">
+                  Profile Settings
+                </h2>
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="name"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Name
                     </label>
                     <input
+                      id="name"
                       type="text"
-                      value={profileForm.name}
-                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className={inputClass}
                       placeholder="Your name"
+                      maxLength={100}
                     />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="email"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Email
                     </label>
                     <input
+                      id="email"
                       type="email"
-                      value={profileForm.email}
-                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="your@email.com"
+                      value={account.email}
+                      disabled
+                      className={`${inputClass} bg-gray-100 text-gray-500`}
                     />
                   </div>
-
                   <div className="pt-4">
                     <button
-                      onClick={saveSettings}
+                      onClick={saveProfile}
                       disabled={isSaving}
                       className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400"
                     >
-                      {isSaving ? 'Saving...' : 'Save Changes'}
+                      {isSaving ? "Saving..." : "Save Changes"}
                     </button>
                   </div>
 
                   <hr className="my-8" />
-
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">Change Password</h3>
-
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">
+                    Change Password
+                  </h3>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="current-password"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Current Password
                     </label>
                     <input
+                      id="current-password"
                       type="password"
-                      value={profileForm.currentPassword}
-                      onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Current password"
+                      autoComplete="current-password"
+                      value={passwords.current}
+                      onChange={(e) =>
+                        setPasswords({ ...passwords, current: e.target.value })
+                      }
+                      className={inputClass}
                     />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="new-password"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       New Password
                     </label>
                     <input
+                      id="new-password"
                       type="password"
-                      value={profileForm.newPassword}
-                      onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="New password (min 6 characters)"
+                      autoComplete="new-password"
+                      value={passwords.next}
+                      onChange={(e) =>
+                        setPasswords({ ...passwords, next: e.target.value })
+                      }
+                      className={inputClass}
+                      placeholder="At least 8 characters"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="confirm-password"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Confirm New Password
                     </label>
                     <input
+                      id="confirm-password"
                       type="password"
-                      value={profileForm.confirmPassword}
-                      onChange={(e) => setProfileForm({ ...profileForm, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Confirm new password"
+                      autoComplete="new-password"
+                      value={passwords.confirm}
+                      onChange={(e) =>
+                        setPasswords({ ...passwords, confirm: e.target.value })
+                      }
+                      className={inputClass}
                     />
                   </div>
-
                   <div>
                     <button
                       onClick={changePassword}
                       disabled={isSaving}
                       className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400"
                     >
-                      {isSaving ? 'Changing...' : 'Change Password'}
+                      {isSaving ? "Changing..." : "Change Password"}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Account Tab */}
-            {activeTab === 'account' && (
+            {/* Plan & usage */}
+            {activeTab === "account" && (
               <div className="max-w-2xl">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">Account Settings</h2>
-                
+                <h2 className="text-xl font-bold text-gray-900 mb-6">
+                  Plan &amp; Usage
+                </h2>
                 <div className="space-y-6">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-blue-900 mb-2">Current Plan</h3>
-                    <p className="text-3xl font-bold text-blue-600 mb-2 capitalize">{settings.currentPlan}</p>
-                    <p className="text-sm text-blue-700 mb-4">
-                      {settings.currentPlan === 'free' && 'Up to 5 chatbots, 1,000 messages/month'}
-                      {settings.currentPlan === 'starter' && 'Up to 10 chatbots, 5,000 messages/month'}
-                      {settings.currentPlan === 'pro' && 'Up to 50 chatbots, 25,000 messages/month'}
-                      {settings.currentPlan === 'enterprise' && 'Unlimited chatbots and messages'}
+                    <h3 className="text-lg font-bold text-blue-900 mb-2">
+                      Current Plan
+                    </h3>
+                    <p className="text-3xl font-bold text-blue-600 mb-2">
+                      {account.planName}
                     </p>
-                    {settings.currentPlan !== 'enterprise' && (
-                      <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                    <p className="text-sm text-blue-700 mb-4">
+                      {account.usage.messageLimit.toLocaleString()}{" "}
+                      messages/month ·{" "}
+                      {account.usage.chatbotLimit === null
+                        ? "Unlimited chatbots"
+                        : `${account.usage.chatbotLimit} chatbot${account.usage.chatbotLimit === 1 ? "" : "s"}`}
+                      {account.subscriptionStatus === "past_due" &&
+                        " · Payment overdue — please update your card in Billing"}
+                    </p>
+                    {account.plan !== "agency" && (
+                      <button
+                        onClick={() => setActiveTab("billing")}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+                      >
                         Upgrade Plan
                       </button>
                     )}
                   </div>
 
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Usage This Month</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">
+                      Usage This Month
+                    </h3>
                     <div className="space-y-3">
                       <div>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-700">Chatbots</span>
-                          <span className="font-semibold">0 / {settings.currentPlan === 'free' ? '5' : settings.currentPlan === 'starter' ? '10' : settings.currentPlan === 'pro' ? '50' : '∞'}</span>
+                          <span className="font-semibold">
+                            {account.usage.chatbots} /{" "}
+                            {account.usage.chatbotLimit ?? "∞"}
+                          </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+                          <div
+                            className="bg-blue-600 h-2 rounded-full"
+                            style={{
+                              width: `${pct(account.usage.chatbots, account.usage.chatbotLimit)}%`,
+                            }}
+                          ></div>
                         </div>
                       </div>
                       <div>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-700">Messages</span>
-                          <span className="font-semibold">0 / {settings.currentPlan === 'free' ? '1,000' : settings.currentPlan === 'starter' ? '5,000' : settings.currentPlan === 'pro' ? '25,000' : '∞'}</span>
+                          <span className="font-semibold">
+                            {account.usage.messagesUsed.toLocaleString()} /{" "}
+                            {account.usage.messageLimit.toLocaleString()}
+                          </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+                          <div
+                            className="bg-blue-600 h-2 rounded-full"
+                            style={{
+                              width: `${pct(account.usage.messagesUsed, account.usage.messageLimit)}%`,
+                            }}
+                          ></div>
                         </div>
+                        {account.usage.resetsAt && (
+                          <p className="mt-2 text-xs text-gray-500">
+                            Resets on{" "}
+                            {new Date(
+                              account.usage.resetsAt,
+                            ).toLocaleDateString("en-US", {
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <hr className="my-8" />
-
                   <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-red-900 mb-2">Delete Account</h3>
+                    <h3 className="text-lg font-bold text-red-900 mb-2">
+                      Delete Account
+                    </h3>
                     <p className="text-sm text-red-700 mb-4">
-                      Permanently delete your account and all associated data. This action cannot be undone.
+                      Permanently delete your account, chatbots, knowledge base
+                      and conversation history. This cannot be undone.
                     </p>
                     <button
                       onClick={() => setShowDeleteModal(true)}
@@ -510,125 +450,80 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Billing Tab */}
-            {activeTab === 'billing' && (
-              <div className="max-w-2xl">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">Billing & Payments</h2>
-                
+            {/* Billing */}
+            {activeTab === "billing" && (
+              <div className="max-w-3xl">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">
+                  Billing &amp; Payments
+                </h2>
                 <div className="space-y-6">
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Payment Method</h3>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Payments are processed securely through Paddle
-                    </p>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                      Add Payment Method
-                    </button>
-                  </div>
-
-                  <div className="bg-white border border-gray-200 rounded-lg">
-                    <div className="p-6 border-b border-gray-200">
-                      <h3 className="text-lg font-bold text-gray-900">Payment History</h3>
-                    </div>
-                    <div className="p-6">
-                      <div className="text-center py-8 text-gray-500">
-                        No payment history yet
-                      </div>
-                    </div>
-                  </div>
-
-                  {settings.currentPlan !== 'free' && (
-                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
-                      <h3 className="text-lg font-bold text-orange-900 mb-2">Cancel Subscription</h3>
-                      <p className="text-sm text-orange-700 mb-4">
-                        Cancel your subscription and downgrade to the free plan at the end of your billing period.
+                  {account.hasSubscription && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-2">
+                        Your Subscription
+                      </h3>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {account.planName} plan · status:{" "}
+                        {account.subscriptionStatus.replace("_", " ")}. Update
+                        your payment method, download invoices or cancel in the
+                        secure Paddle billing portal.
                       </p>
-                      <button className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-700 transition-colors">
-                        Cancel Subscription
+                      <button
+                        onClick={openBillingPortal}
+                        disabled={isSaving}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                      >
+                        {isSaving ? "Opening..." : "Manage Billing"}
                       </button>
                     </div>
                   )}
-                </div>
-              </div>
-            )}
 
-            {/* API Keys Tab */}
-            {activeTab === 'api-keys' && (
-              <div className="max-w-2xl">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">API Keys</h2>
-                
-                <div className="space-y-6">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-blue-900 mb-2">Create New API Key</h3>
-                    <p className="text-sm text-blue-700 mb-4">
-                      Generate an API key to use our chatbot API in your applications
-                    </p>
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={newApiKey.name}
-                        onChange={(e) => setNewApiKey({ ...newApiKey, name: e.target.value })}
-                        className="flex-1 px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="API key name (e.g., Production, Development)"
-                      />
-                      <button
-                        onClick={generateApiKey}
-                        className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors whitespace-nowrap"
-                      >
-                        Generate Key
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-gray-200 rounded-lg">
-                    <div className="p-6 border-b border-gray-200">
-                      <h3 className="text-lg font-bold text-gray-900">Your API Keys</h3>
-                    </div>
-                    <div className="divide-y divide-gray-200">
-                      {settings.apiKeys.length === 0 ? (
-                        <div className="p-6 text-center text-gray-500">
-                          No API keys yet. Create one to get started.
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {PAID_PLANS.map((id) => {
+                      const p = PLANS[id];
+                      const current = account.plan === id;
+                      return (
+                        <div
+                          key={id}
+                          className={`border rounded-lg p-5 ${current ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
+                        >
+                          <h4 className="font-bold text-gray-900">{p.name}</h4>
+                          <p className="text-2xl font-bold text-gray-900 my-2">
+                            ${p.price}
+                            <span className="text-sm text-gray-500">/mo</span>
+                          </p>
+                          <p className="text-sm text-gray-600 mb-4">
+                            {p.messages.toLocaleString()} messages/mo
+                            <br />
+                            {Number.isFinite(p.chatbots)
+                              ? `${p.chatbots} chatbots`
+                              : "Unlimited chatbots"}
+                          </p>
+                          {current ? (
+                            <p className="text-sm font-semibold text-blue-600">
+                              Current plan
+                            </p>
+                          ) : account.hasSubscription ? (
+                            <p className="text-xs text-gray-500">
+                              To switch plans, cancel in Manage Billing, then
+                              subscribe to the new plan.
+                            </p>
+                          ) : (
+                            <PaddleButton
+                              plan={id}
+                              className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+                            >
+                              Subscribe
+                            </PaddleButton>
+                          )}
                         </div>
-                      ) : (
-                        settings.apiKeys.map((apiKey) => (
-                          <div key={apiKey.id} className="p-6">
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <h4 className="font-semibold text-gray-900">{apiKey.name}</h4>
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Created {new Date(apiKey.createdAt).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <button
-                                onClick={() => deleteApiKey(apiKey.id)}
-                                className="text-red-600 hover:text-red-800 text-sm font-medium"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                            <div className="flex gap-2 mt-3">
-                              <code className="flex-1 bg-gray-100 px-4 py-2 rounded text-sm font-mono text-gray-800 overflow-x-auto">
-                                {apiKey.key}
-                              </code>
-                              <button
-                                onClick={() => copyToClipboard(apiKey.key)}
-                                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition-colors text-sm font-medium whitespace-nowrap"
-                              >
-                                Copy
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
-
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-                    <h3 className="text-lg font-bold text-yellow-900 mb-2">⚠️ Security Notice</h3>
-                    <p className="text-sm text-yellow-700">
-                      Keep your API keys secure and never share them publicly. If you believe a key has been compromised, delete it immediately and generate a new one.
-                    </p>
-                  </div>
+                  <p className="text-xs text-gray-500">
+                    Payments are processed securely by Paddle, our merchant of
+                    record. Prices in USD; taxes may apply.
+                  </p>
                 </div>
               </div>
             )}
@@ -636,13 +531,19 @@ export default function SettingsPage() {
         </div>
       </main>
 
-      {/* Delete Account Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Delete Account?</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              Delete Account?
+            </h3>
             <p className="text-gray-700 mb-6">
-              Are you sure you want to delete your account? This action is permanent and cannot be undone. All your chatbots, data, and settings will be lost.
+              This permanently deletes your account, all chatbots, knowledge and
+              conversation history. This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button

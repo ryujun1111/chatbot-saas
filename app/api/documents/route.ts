@@ -1,312 +1,312 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { parseFile, validateFileSize, validateFileType } from '@/lib/file-parser';
-import { splitTextIntoChunks, createEmbeddings } from '@/lib/ai-client';
+import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { getAuthUser } from "@/lib/supabase/server";
+import { splitTextIntoChunks, createEmbeddings } from "@/lib/ai-client";
+import { crawlSite } from "@/lib/crawler";
+import { detectFileType, extractText, MAX_FILE_BYTES } from "@/lib/file-parser";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Knowledge base API. Each `documents` row is one embedded chunk; rows sharing a source_id
+// form one "source" (a crawled page, an uploaded file or a pasted text).
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+const MAX_CHUNKS_PER_CHATBOT = 3000;
 
-/**
- * POST /api/documents
- * 문서 추가 (파일 업로드, URL 크롤링, 텍스트 직접 입력)
- */
-export async function POST(request: NextRequest) {
-  try {
-    const contentType = request.headers.get('content-type') || '';
+type Supabase = Awaited<ReturnType<typeof getAuthUser>>["supabase"];
 
-    let chatbotId: string;
-    let title: string;
-    let content: string;
-    let source: 'file' | 'url' | 'text';
-    let fileType: string | undefined;
-    let url: string | undefined;
-
-    // FormData 처리 (파일 업로드)
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      chatbotId = formData.get('chatbot_id') as string;
-      title = formData.get('title') as string;
-      const file = formData.get('file') as File;
-
-      if (!file) {
-        return NextResponse.json(
-          { success: false, error: '파일이 필요합니다' },
-          { status: 400 }
-        );
-      }
-
-      // 파일 크기 검증 (10MB)
-      if (!validateFileSize(file.size)) {
-        return NextResponse.json(
-          { success: false, error: '파일 크기는 10MB 이하여야 합니다' },
-          { status: 400 }
-        );
-      }
-
-      // 파일 타입 검증
-      if (!validateFileType(file.type)) {
-        return NextResponse.json(
-          { success: false, error: '지원하지 않는 파일 형식입니다. PDF, DOCX, TXT 파일만 지원합니다' },
-          { status: 400 }
-        );
-      }
-
-      // 파일에서 텍스트 추출
-      const buffer = Buffer.from(await file.arrayBuffer());
-      content = await parseFile(buffer, file.type);
-      source = 'file';
-      fileType = file.type;
-
-      if (!title) {
-        title = file.name;
-      }
-    } 
-    // JSON 처리 (URL 또는 텍스트)
-    else {
-      const body = await request.json();
-      chatbotId = body.chatbot_id;
-      title = body.title;
-      source = body.source;
-      url = body.url;
-
-      if (source === 'url') {
-        // URL 크롤링
-        const crawlResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/crawl`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-
-        if (!crawlResponse.ok) {
-          return NextResponse.json(
-            { success: false, error: 'URL 크롤링에 실패했습니다' },
-            { status: 400 }
-          );
-        }
-
-        const crawlData = await crawlResponse.json();
-        if (!crawlData.success || !crawlData.pages || crawlData.pages.length === 0) {
-          return NextResponse.json(
-            { success: false, error: 'URL에서 콘텐츠를 가져올 수 없습니다' },
-            { status: 400 }
-          );
-        }
-
-        content = crawlData.pages[0].content;
-        if (!title) {
-          title = crawlData.pages[0].title;
-        }
-      } else if (source === 'text') {
-        content = body.content;
-      } else {
-        return NextResponse.json(
-          { success: false, error: '잘못된 source 타입입니다' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // 입력 검증
-    if (!chatbotId || !title || !content) {
-      return NextResponse.json(
-        { success: false, error: '필수 필드가 누락되었습니다' },
-        { status: 400 }
-      );
-    }
-
-    // 문서 저장 (processing 상태)
-    const { data: document, error: insertError } = await supabase
-      .from('documents')
-      .insert({
-        chatbot_id: chatbotId,
-        title,
-        content,
-        source,
-        file_type: fileType,
-        url,
-        status: 'processing',
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('문서 저장 에러:', insertError);
-      return NextResponse.json(
-        { success: false, error: '문서 저장에 실패했습니다' },
-        { status: 500 }
-      );
-    }
-
-    // 비동기로 임베딩 생성 (백그라운드)
-    processDocumentEmbedding(document.id, chatbotId, content).catch(err => {
-      console.error('임베딩 처리 에러:', err);
-    });
-
-    return NextResponse.json({
-      success: true,
-      document,
-    });
-
-  } catch (error) {
-    console.error('문서 업로드 에러:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : '문서 업로드에 실패했습니다' 
-      },
-      { status: 500 }
-    );
-  }
+// Returns true only if the chatbot belongs to the logged-in user
+async function ownsChatbot(
+  supabase: Supabase,
+  userId: string,
+  chatbotId: unknown,
+) {
+  if (typeof chatbotId !== "string" || !chatbotId) return false;
+  const { data } = await supabase
+    .from("chatbots")
+    .select("id")
+    .eq("id", chatbotId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!data;
 }
 
-/**
- * GET /api/documents?chatbot_id=xxx
- * 문서 목록 조회
- */
-export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const chatbotId = searchParams.get('chatbot_id');
-
-    if (!chatbotId) {
-      return NextResponse.json(
-        { success: false, error: 'chatbot_id가 필요합니다' },
-        { status: 400 }
-      );
-    }
-
-    const { data: documents, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('chatbot_id', chatbotId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('문서 조회 에러:', error);
-      return NextResponse.json(
-        { success: false, error: '문서 조회에 실패했습니다' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      documents,
-    });
-
-  } catch (error) {
-    console.error('문서 조회 에러:', error);
-    return NextResponse.json(
-      { success: false, error: '문서 조회에 실패했습니다' },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * DELETE /api/documents?id=xxx
- * 문서 삭제
- */
-export async function DELETE(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const documentId = searchParams.get('id');
-
-    if (!documentId) {
-      return NextResponse.json(
-        { success: false, error: 'document id가 필요합니다' },
-        { status: 400 }
-      );
-    }
-
-    // 문서 청크 삭제
-    await supabase
-      .from('document_chunks')
-      .delete()
-      .eq('document_id', documentId);
-
-    // 문서 삭제
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', documentId);
-
-    if (error) {
-      console.error('문서 삭제 에러:', error);
-      return NextResponse.json(
-        { success: false, error: '문서 삭제에 실패했습니다' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-    });
-
-  } catch (error) {
-    console.error('문서 삭제 에러:', error);
-    return NextResponse.json(
-      { success: false, error: '문서 삭제에 실패했습니다' },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * 문서 임베딩 처리 (비동기)
- */
-async function processDocumentEmbedding(
-  documentId: string,
+// Chunk + embed + insert. Returns number of chunks stored.
+async function storeSources(
+  supabase: Supabase,
   chatbotId: string,
-  content: string
-): Promise<void> {
-  try {
-    // 텍스트를 청크로 분할 (500자)
-    const chunks = splitTextIntoChunks(content, 500);
-
-    // 임베딩 생성
-    const embeddings = await createEmbeddings(chunks);
-
-    // 청크와 임베딩을 document_chunks 테이블에 저장
-    const chunkRecords = chunks.map((chunk, index) => ({
-      document_id: documentId,
+  sources: {
+    title: string;
+    url: string | null;
+    source: "url" | "file" | "text";
+    text: string;
+  }[],
+) {
+  const rows = sources.flatMap((s) => {
+    const sourceId = randomUUID();
+    return splitTextIntoChunks(s.text).map((content) => ({
       chatbot_id: chatbotId,
-      content: chunk,
-      embedding: embeddings[index],
-      chunk_index: index,
+      source_id: sourceId,
+      title: s.title.slice(0, 300),
+      url: s.url,
+      source: s.source,
+      content,
     }));
+  });
+  if (rows.length === 0) throw new Error("No readable text found");
 
-    const { error: chunkError } = await supabase
-      .from('document_chunks')
-      .insert(chunkRecords);
+  const { count } = await supabase
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("chatbot_id", chatbotId);
+  if ((count ?? 0) + rows.length > MAX_CHUNKS_PER_CHATBOT) {
+    throw new Error(
+      "Knowledge base is full for this chatbot. Delete some sources first.",
+    );
+  }
 
-    if (chunkError) {
-      throw chunkError;
+  // Embed and insert in batches of 100 chunks
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const embeddings = await createEmbeddings(batch.map((r) => r.content));
+    const { error } = await supabase
+      .from("documents")
+      .insert(batch.map((r, j) => ({ ...r, embedding: embeddings[j] })));
+    if (error) throw new Error(`Failed to save knowledge: ${error.message}`);
+  }
+  return rows.length;
+}
+
+// GET /api/documents?chatbot_id=... → list of sources with chunk counts
+export async function GET(request: NextRequest) {
+  const { supabase, user } = await getAuthUser();
+  if (!user)
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 },
+    );
+
+  const chatbotId = request.nextUrl.searchParams.get("chatbot_id");
+  if (!(await ownsChatbot(supabase, user.id, chatbotId))) {
+    return NextResponse.json(
+      { success: false, error: "Chatbot not found" },
+      { status: 404 },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("documents")
+    .select("source_id, title, url, source, created_at")
+    .eq("chatbot_id", chatbotId!)
+    .order("created_at", { ascending: false })
+    .limit(MAX_CHUNKS_PER_CHATBOT);
+  if (error)
+    return NextResponse.json(
+      { success: false, error: "Failed to load documents" },
+      { status: 500 },
+    );
+
+  const grouped = new Map<
+    string,
+    {
+      id: string;
+      title: string;
+      url: string | null;
+      source: string;
+      chunk_count: number;
+      created_at: string;
+    }
+  >();
+  for (const row of data) {
+    const g = grouped.get(row.source_id);
+    if (g) g.chunk_count++;
+    else
+      grouped.set(row.source_id, {
+        id: row.source_id,
+        title: row.title || row.url || "Untitled",
+        url: row.url,
+        source: row.source,
+        chunk_count: 1,
+        created_at: row.created_at,
+      });
+  }
+  return NextResponse.json({ success: true, documents: [...grouped.values()] });
+}
+
+// POST /api/documents → add knowledge: { source: 'url' | 'text' } JSON, or multipart file upload
+export async function POST(request: NextRequest) {
+  const { supabase, user } = await getAuthUser();
+  if (!user)
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 },
+    );
+
+  try {
+    // File upload
+    if (
+      (request.headers.get("content-type") || "").includes(
+        "multipart/form-data",
+      )
+    ) {
+      const form = await request.formData();
+      const chatbotId = form.get("chatbot_id");
+      const file = form.get("file");
+      if (!(await ownsChatbot(supabase, user.id, chatbotId))) {
+        return NextResponse.json(
+          { success: false, error: "Chatbot not found" },
+          { status: 404 },
+        );
+      }
+      if (!(file instanceof File))
+        return NextResponse.json(
+          { success: false, error: "File is required" },
+          { status: 400 },
+        );
+      if (file.size > MAX_FILE_BYTES)
+        return NextResponse.json(
+          { success: false, error: "File must be 10MB or smaller" },
+          { status: 400 },
+        );
+      const type = detectFileType(file);
+      if (!type)
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Only PDF, DOCX and TXT files are supported",
+          },
+          { status: 400 },
+        );
+
+      const text = await extractText(
+        Buffer.from(await file.arrayBuffer()),
+        type,
+      );
+      const chunks = await storeSources(supabase, chatbotId as string, [
+        { title: file.name, url: null, source: "file", text },
+      ]);
+      return NextResponse.json({ success: true, sources: 1, chunks });
     }
 
-    // 문서 상태를 'completed'로 업데이트
-    await supabase
-      .from('documents')
-      .update({ 
-        status: 'completed',
-        chunk_count: chunks.length,
-      })
-      .eq('id', documentId);
+    const body = await request.json().catch(() => ({}));
+    if (!(await ownsChatbot(supabase, user.id, body.chatbot_id))) {
+      return NextResponse.json(
+        { success: false, error: "Chatbot not found" },
+        { status: 404 },
+      );
+    }
 
+    // Website crawl: same-site pages starting at the given URL
+    if (body.source === "url") {
+      if (typeof body.url !== "string" || !body.url.trim()) {
+        return NextResponse.json(
+          { success: false, error: "URL is required" },
+          { status: 400 },
+        );
+      }
+      const maxPages = Math.max(1, Math.min(Number(body.maxPages) || 10, 25));
+      const pages = await crawlSite(body.url, maxPages);
+      if (pages.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Could not read any content from this website. It may block crawlers or render content with JavaScript only.",
+          },
+          { status: 422 },
+        );
+      }
+      // Re-training a URL replaces its previous content
+      await supabase
+        .from("documents")
+        .delete()
+        .eq("chatbot_id", body.chatbot_id)
+        .in(
+          "url",
+          pages.map((p) => p.url),
+        );
+      const chunks = await storeSources(
+        supabase,
+        body.chatbot_id,
+        pages.map((p) => ({
+          title: p.title,
+          url: p.url,
+          source: "url" as const,
+          text: p.content,
+        })),
+      );
+      return NextResponse.json({
+        success: true,
+        sources: pages.length,
+        chunks,
+        pages: pages.map((p) => ({ url: p.url, title: p.title })),
+      });
+    }
+
+    // Pasted text
+    if (body.source === "text") {
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      const content = typeof body.content === "string" ? body.content : "";
+      if (!title || !content.trim())
+        return NextResponse.json(
+          { success: false, error: "Title and content are required" },
+          { status: 400 },
+        );
+      if (content.length > 100000)
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Text is too long (max 100,000 characters)",
+          },
+          { status: 400 },
+        );
+      const chunks = await storeSources(supabase, body.chatbot_id, [
+        { title, url: null, source: "text", text: content },
+      ]);
+      return NextResponse.json({ success: true, sources: 1, chunks });
+    }
+
+    return NextResponse.json(
+      { success: false, error: "Invalid source type" },
+      { status: 400 },
+    );
   } catch (error) {
-    console.error('임베딩 처리 에러:', error);
-    
-    // 문서 상태를 'failed'로 업데이트
-    await supabase
-      .from('documents')
-      .update({ 
-        status: 'failed',
-        error_message: error instanceof Error ? error.message : '임베딩 생성 실패',
-      })
-      .eq('id', documentId);
+    console.error("Document upload error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to add document";
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 400 },
+    );
   }
+}
+
+// DELETE /api/documents?chatbot_id=...&id=<source_id>
+export async function DELETE(request: NextRequest) {
+  const { supabase, user } = await getAuthUser();
+  if (!user)
+    return NextResponse.json(
+      { success: false, error: "Authentication required" },
+      { status: 401 },
+    );
+
+  const chatbotId = request.nextUrl.searchParams.get("chatbot_id");
+  const sourceId = request.nextUrl.searchParams.get("id");
+  if (!sourceId || !(await ownsChatbot(supabase, user.id, chatbotId))) {
+    return NextResponse.json(
+      { success: false, error: "Document not found" },
+      { status: 404 },
+    );
+  }
+
+  const { error } = await supabase
+    .from("documents")
+    .delete()
+    .eq("chatbot_id", chatbotId!)
+    .eq("source_id", sourceId);
+  if (error)
+    return NextResponse.json(
+      { success: false, error: "Failed to delete document" },
+      { status: 500 },
+    );
+  return NextResponse.json({ success: true });
 }

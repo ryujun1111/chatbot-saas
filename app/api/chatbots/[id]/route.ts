@@ -1,156 +1,94 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { updateChatbotSchema } from '@/lib/types/chatbot';
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/supabase/server";
+import { updateChatbotSchema } from "@/lib/types/chatbot";
 
-// GET: 특정 챗봇 조회
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const supabase = await createClient();
-    
-    // 사용자 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      );
-    }
+type Params = { params: Promise<{ id: string }> };
 
-    // 챗봇 조회
-    const { data: chatbot, error } = await supabase
-      .from('chatbots')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .single();
+// All queries go through the RLS-scoped client AND filter by user_id (defense in depth)
 
-    if (error || !chatbot) {
-      return NextResponse.json(
-        { error: '챗봇을 찾을 수 없습니다' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({ chatbot });
-  } catch (error) {
-    console.error('챗봇 조회 오류:', error);
+export async function GET(_request: NextRequest, { params }: Params) {
+  const { id } = await params;
+  const { supabase, user } = await getAuthUser();
+  if (!user)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
-      { status: 500 }
+      { error: "Authentication required" },
+      { status: 401 },
     );
-  }
+
+  const { data: chatbot } = await supabase
+    .from("chatbots")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!chatbot)
+    return NextResponse.json({ error: "Chatbot not found" }, { status: 404 });
+  return NextResponse.json({ chatbot });
 }
 
-// PATCH: 챗봇 수정
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const supabase = await createClient();
-    
-    // 사용자 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      );
-    }
-
-    // 요청 본문 파싱
-    const body = await request.json();
-
-    // 유효성 검증
-    const validationResult = updateChatbotSchema.safeParse(body);
-    
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { 
-          error: '입력 데이터가 올바르지 않습니다',
-          details: validationResult.error.issues 
-        },
-        { status: 400 }
-      );
-    }
-
-    const updateData = validationResult.data;
-
-    // 챗봇 수정
-    const { data: chatbot, error } = await supabase
-      .from('chatbots')
-      .update({
-        ...updateData,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .select()
-      .single();
-
-    if (error || !chatbot) {
-      return NextResponse.json(
-        { error: '챗봇 수정에 실패했습니다' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ chatbot });
-  } catch (error) {
-    console.error('챗봇 수정 오류:', error);
+export async function PATCH(request: NextRequest, { params }: Params) {
+  const { id } = await params;
+  const { supabase, user } = await getAuthUser();
+  if (!user)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
-      { status: 500 }
+      { error: "Authentication required" },
+      { status: 401 },
+    );
+
+  const parsed = updateChatbotSchema.safeParse(
+    await request.json().catch(() => ({})),
+  );
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message || "Invalid input" },
+      { status: 400 },
     );
   }
+  // Empty URL field means "remove the website URL"
+  const update = {
+    ...parsed.data,
+    website_url:
+      parsed.data.website_url === "" ? null : parsed.data.website_url,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: chatbot } = await supabase
+    .from("chatbots")
+    .update(update)
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .maybeSingle();
+
+  if (!chatbot)
+    return NextResponse.json({ error: "Chatbot not found" }, { status: 404 });
+  return NextResponse.json({ chatbot });
 }
 
-// DELETE: 챗봇 삭제
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const supabase = await createClient();
-    
-    // 사용자 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      );
-    }
-
-    // 챗봇 삭제
-    const { error } = await supabase
-      .from('chatbots')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id);
-
-    if (error) {
-      return NextResponse.json(
-        { error: '챗봇 삭제에 실패했습니다' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('챗봇 삭제 오류:', error);
+export async function DELETE(_request: NextRequest, { params }: Params) {
+  const { id } = await params;
+  const { supabase, user } = await getAuthUser();
+  if (!user)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
-      { status: 500 }
+      { error: "Authentication required" },
+      { status: 401 },
     );
-  }
+
+  // Documents and message logs are removed by ON DELETE CASCADE
+  const { data, error } = await supabase
+    .from("chatbots")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id");
+
+  if (error)
+    return NextResponse.json(
+      { error: "Failed to delete chatbot" },
+      { status: 500 },
+    );
+  if (!data?.length)
+    return NextResponse.json({ error: "Chatbot not found" }, { status: 404 });
+  return NextResponse.json({ success: true });
 }

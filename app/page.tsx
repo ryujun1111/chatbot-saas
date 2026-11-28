@@ -55,7 +55,7 @@ export default function Home() {
               {/* Badge */}
               <div className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 backdrop-blur-sm">
                 <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-blue-400" />
-                <span className="text-xs md:text-sm text-gray-300">Powered by DeepSeek R1 • 90.8% MMLU</span>
+                <span className="text-xs md:text-sm text-gray-300">Powered by GPT-4o mini • Trained on your website</span>
               </div>
 
               {/* Main Heading */}
@@ -164,19 +164,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Social Proof */}
-        <section className="py-8 md:py-12 border-y border-white/5">
-          <div className="container mx-auto px-4 md:px-6">
-            <p className="text-center text-xs md:text-sm text-gray-500 mb-6 md:mb-8">TRUSTED BY FORWARD-THINKING COMPANIES</p>
-            <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12 text-gray-600">
-              <span className="text-lg md:text-2xl font-semibold">Company</span>
-              <span className="text-lg md:text-2xl font-semibold">Startup</span>
-              <span className="text-lg md:text-2xl font-semibold">Agency</span>
-              <span className="text-lg md:text-2xl font-semibold">SaaS</span>
-            </div>
-          </div>
-        </section>
-
         {/* Features Section */}
         <section className="py-12 md:py-16 lg:py-24 px-4 md:px-6">
           <div className="container mx-auto max-w-6xl">
@@ -262,7 +249,7 @@ export default function Home() {
                 Ready to Convert More Visitors?
               </h2>
               <p className="text-base md:text-lg lg:text-xl text-gray-300 mb-6 md:mb-8 text-center">
-                Join thousands of businesses using AI to sell 24/7
+                Let AI answer your visitors' questions 24/7
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
                 <Link href="/signup" className="w-full sm:w-auto">
@@ -283,7 +270,12 @@ export default function Home() {
         {/* Footer */}
         <footer className="py-8 md:py-12 px-4 md:px-6 border-t border-white/5">
           <div className="container mx-auto text-center text-sm md:text-base text-gray-500">
-            <p>© 2024 ChatBot AI. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} ChatBot AI. All rights reserved.</p>
+            <div className="mt-3 flex justify-center gap-6">
+              <Link href="/pricing" className="hover:text-gray-300">Pricing</Link>
+              <Link href="/privacy" className="hover:text-gray-300">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-gray-300">Terms of Service</Link>
+            </div>
           </div>
         </footer>
       </div>
@@ -300,7 +292,7 @@ const features = [
   {
     icon: Bot,
     title: "Human-Like AI",
-    description: "DeepSeek R1 beats GPT-4o on benchmarks. Customers won't know it's a bot."
+    description: "Answers come from your own website content, in a natural conversational tone."
   },
   {
     icon: Globe,
@@ -331,7 +323,7 @@ const pricingPlans = [
     description: "Perfect for testing",
     cta: { text: "Get Started", link: "/signup" },
     features: [
-      "5 messages/day",
+      "50 messages/mo",
       "1 chatbot",
       "Basic analytics",
       "Community support"

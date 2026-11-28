@@ -1,31 +1,45 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Bot, ArrowRight } from 'lucide-react';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Bot, ArrowRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+
+// Only allow same-site relative redirects after login (prevents open redirects)
+function safeNext(): string {
+  const next = new URLSearchParams(window.location.search).get("next") || "";
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Supabase email/password sign-in; the session is stored in cookies for the server
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
-    // Simulate login (replace with actual auth)
-    setTimeout(() => {
-      if (email && password) {
-        router.push('/dashboard');
-      } else {
-        setError('Invalid credentials');
-        setLoading(false);
-      }
-    }, 1000);
+    const { error } = await createClient().auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      setError(
+        error.message === "Invalid login credentials"
+          ? "Invalid email or password"
+          : error.message,
+      );
+      setLoading(false);
+      return;
+    }
+    router.replace(safeNext());
+    router.refresh();
   };
 
   return (
@@ -64,7 +78,10 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Email
               </label>
               <input
@@ -81,7 +98,10 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Password
               </label>
               <input
@@ -119,14 +139,14 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold rounded-lg hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{loading ? 'Signing in...' : 'Sign In'}</span>
+              <span>{loading ? "Signing in..." : "Sign In"}</span>
               <ArrowRight className="w-5 h-5" />
             </button>
 
             {/* Sign Up Link */}
             <div className="text-center pt-4 border-t border-white/10">
               <p className="text-sm text-gray-400">
-                Don't have an account?{' '}
+                Don't have an account?{" "}
                 <Link
                   href="/signup"
                   className="font-semibold text-blue-400 hover:text-blue-300 transition-colors"

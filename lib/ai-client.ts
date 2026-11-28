@@ -1,137 +1,94 @@
-import OpenAI from 'openai';
+import OpenAI from "openai";
 
-// ============================================
-// OpenRouter 클라이언트 (선택 사항)
-// ============================================
-export const deepseekClient = process.env.OPENROUTER_API_KEY
+// OpenAI: embeddings + default chat model (gpt-4o-mini)
+export const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const OPENAI_EMBEDDING_MODEL =
+  process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+
+// Optional: DeepSeek via OpenRouter, used only for chatbots that select model 'deepseek-chat'
+const deepseekClient = process.env.OPENROUTER_API_KEY
   ? new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,
-      baseURL: 'https://openrouter.ai/api/v1',
-      defaultHeaders: {
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'Chatbot SaaS',
-      },
+      baseURL: "https://openrouter.ai/api/v1",
     })
   : null;
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat";
 
-export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek/deepseek-chat';
-
-// ============================================
-// OpenAI 클라이언트 (임베딩 전용)
-// ============================================
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error('OPENAI_API_KEY is not set in environment variables');
-}
-
-export const openaiClient = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-export const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
-
-// ============================================
-// 임베딩 함수 (OpenAI)
-// ============================================
-
-/**
- * 텍스트를 청크로 분할하는 함수
- * @param text 분할할 텍스트
- * @param chunkSize 청크 크기 (기본값: 500)
- * @returns 분할된 텍스트 청크 배열
- */
-export function splitTextIntoChunks(text: string, chunkSize: number = 500): string[] {
-  if (!text || text.trim().length === 0) {
-    return [];
-  }
-
+// Split text into ~size-char chunks on sentence/word boundaries with a small overlap,
+// so an answer that straddles a boundary is still retrievable.
+export function splitTextIntoChunks(
+  text: string,
+  size = 1000,
+  overlap = 150,
+): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
   const chunks: string[] = [];
-  let currentIndex = 0;
-
-  while (currentIndex < text.length) {
-    const chunk = text.slice(currentIndex, currentIndex + chunkSize);
-    chunks.push(chunk.trim());
-    currentIndex += chunkSize;
+  let start = 0;
+  while (start < clean.length) {
+    let end = Math.min(start + size, clean.length);
+    if (end < clean.length) {
+      const cut = Math.max(
+        clean.lastIndexOf(". ", end),
+        clean.lastIndexOf(" ", end),
+      );
+      if (cut > start + size / 2) end = cut + 1;
+    }
+    const chunk = clean.slice(start, end).trim();
+    if (chunk) chunks.push(chunk);
+    if (end >= clean.length) break;
+    start = Math.max(end - overlap, start + 1);
   }
-
-  return chunks.filter(chunk => chunk.length > 0);
+  return chunks;
 }
 
-/**
- * 텍스트를 임베딩 벡터로 변환 (OpenAI)
- * @param text 임베딩할 텍스트
- * @returns 1536차원 임베딩 벡터
- */
-export async function createEmbedding(text: string): Promise<number[]> {
-  try {
-    const response = await openaiClient.embeddings.create({
-      model: OPENAI_EMBEDDING_MODEL,
-      input: text,
-      encoding_format: 'float',
-    });
-
-    return response.data[0].embedding;
-  } catch (error) {
-    console.error('Error creating embedding:', error);
-    throw new Error('Failed to create embedding');
-  }
-}
-
-/**
- * 여러 텍스트를 배치로 임베딩 생성 (OpenAI)
- * @param texts 임베딩할 텍스트 배열
- * @returns 임베딩 벡터 배열
- */
 export async function createEmbeddings(texts: string[]): Promise<number[][]> {
-  try {
-    const response = await openaiClient.embeddings.create({
-      model: OPENAI_EMBEDDING_MODEL,
-      input: texts,
-      encoding_format: 'float',
-    });
-
-    return response.data.map(item => item.embedding);
-  } catch (error) {
-    console.error('Error creating embeddings:', error);
-    throw new Error('Failed to create embeddings');
-  }
+  const response = await openaiClient.embeddings.create({
+    model: OPENAI_EMBEDDING_MODEL,
+    input: texts,
+  });
+  return response.data.map((item) => item.embedding);
 }
-
-// ============================================
-// 채팅 함수 (DeepSeek R1)
-// ============================================
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
-export interface ChatCompletionOptions {
+export async function createChatCompletion(options: {
   messages: ChatMessage[];
+  model?: string;
   temperature?: number;
   maxTokens?: number;
-}
+}): Promise<string> {
+  const { messages, model, temperature = 0.7, maxTokens = 500 } = options;
 
-/**
- * AI 채팅 완성 생성 (OpenAI GPT-4o-mini)
- * @param options 채팅 옵션
- * @returns 생성된 응답 텍스트
- */
-export async function createChatCompletion(options: ChatCompletionOptions): Promise<string> {
-  try {
-    const { messages, temperature = 0.7, maxTokens } = options;
-
-    // OpenAI GPT-4o-mini 사용
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: messages as any[],
-      temperature,
-      ...(maxTokens && { max_tokens: maxTokens }),
-    });
-
-    return response.choices[0]?.message?.content || '답변을 생성할 수 없습니다.';
-  } catch (error) {
-    console.error('Error creating chat completion:', error);
-    throw new Error('Failed to create chat completion');
+  if (model === "deepseek-chat" && deepseekClient) {
+    try {
+      const r = await deepseekClient.chat.completions.create({
+        model: DEEPSEEK_MODEL,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      });
+      const text = r.choices[0]?.message?.content;
+      if (text) return text;
+    } catch (error) {
+      // Keep the customer's chatbot answering even if OpenRouter is down / out of credit
+      console.error(
+        "DeepSeek (OpenRouter) failed, falling back to gpt-4o-mini:",
+        error,
+      );
+    }
   }
-}
 
+  const response = await openaiClient.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+  });
+  return (
+    response.choices[0]?.message?.content ||
+    "Sorry, I couldn't generate an answer. Please try again."
+  );
+}

@@ -10,7 +10,7 @@
 - ✅ First name: Junyoung
 - ✅ Last name: Ryu
 - ✅ Email: ryujy0915@gmail.com
-- ✅ Password: ChatBot2026!AI#Paddle
+- ✅ Password: [REDACTED — change this password, it was exposed in git history]
 
 ### Step 2: 비즈니스 정보 (Part 1 of 2 - 진행 중)
 - ✅ Business name: ChatBot AI
@@ -52,7 +52,7 @@
 
 **⚠️ 비밀번호 저장:**
 - Email: ryujy0915@gmail.com
-- Password: ChatBot2026!AI#Paddle
+- Password: [REDACTED — change this password, it was exposed in git history]
 - 안전한 곳에 보관하세요!
 
 ---

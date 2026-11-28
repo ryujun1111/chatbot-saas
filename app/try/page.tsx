@@ -20,7 +20,6 @@ export default function TryPage() {
       return;
     }
 
-    // URL 형식 간단 검증
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       setError('Please enter a valid URL starting with http:// or https://');
       return;
@@ -29,35 +28,19 @@ export default function TryPage() {
     setIsLoading(true);
     
     try {
-      // 크롤링 API 호출
-      const response = await fetch('/api/crawl', {
+      // Read the website (no signup, nothing stored) and open the demo chat
+      const response = await fetch('/api/try', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'crawl', url }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to crawl website');
+        throw new Error(data.error || 'Failed to read website');
       }
 
-      if (!data.success || !data.pages || data.pages.length === 0) {
-        throw new Error('No content found on the website');
-      }
-
-      // 크롤링 결과를 localStorage에 저장
-      localStorage.setItem('crawlResult', JSON.stringify({
-        url,
-        pages: data.pages,
-        crawledAt: new Date().toISOString(),
-      }));
-
-      // 테스트 채팅 페이지로 이동
-      router.push('/test-chat');
-      
+      sessionStorage.setItem('crawlResult', JSON.stringify(data));
+      router.push('/try/result');
     } catch (err) {
       console.error('Crawl error:', err);
       setError(err instanceof Error ? err.message : 'Failed to build chatbot');
@@ -198,7 +181,7 @@ export default function TryPage() {
                 </div>
                 <h3 className="text-base md:text-lg font-semibold text-white mb-2">AI-Powered</h3>
                 <p className="text-sm text-gray-400">
-                  Uses DeepSeek R1 to understand and answer questions accurately
+                  Uses GPT-4o mini to answer questions from your website content
                 </p>
               </div>
 

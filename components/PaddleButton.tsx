@@ -1,63 +1,90 @@
 "use client";
 
-import { trackSelectPlan } from '@/components/GoogleAnalytics';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { trackSelectPlan, trackPurchase } from "@/components/GoogleAnalytics";
+import { createClient } from "@/lib/supabase/client";
+import { PLANS, PADDLE_PRICE_IDS, type PlanId } from "@/lib/plans";
 
 declare global {
   interface Window {
     Paddle?: any;
+    __paddleReady?: boolean;
   }
 }
 
 interface PaddleButtonProps {
-  priceId: string;
+  plan: Exclude<PlanId, "free">;
   children: React.ReactNode;
   className?: string;
-  planName?: string;
-  planValue?: number;
 }
 
-export default function PaddleButton({ 
-  priceId, 
-  children, 
+// Opens Paddle checkout for the logged-in user. The user id travels in customData so the
+// webhook can grant the plan; the plan itself is derived server-side from the price id.
+export default function PaddleButton({
+  plan,
+  children,
   className,
-  planName = 'Unknown',
-  planValue = 0
 }: PaddleButtonProps) {
-  const handleClick = () => {
-    // Google Analytics 이벤트 추적
-    trackSelectPlan(planName, planValue);
+  const router = useRouter();
+  const [error, setError] = useState("");
 
-    if (typeof window !== 'undefined' && window.Paddle) {
-      window.Paddle.Checkout.open({
-        items: [{ priceId, quantity: 1 }],
-        customData: {
-          plan: planName
-        },
-        successCallback: () => {
-          // 결제 성공 시
-          if (typeof window !== 'undefined' && (window as any).gtag) {
-            (window as any).gtag('event', 'purchase', {
-              transaction_id: Date.now().toString(),
-              value: planValue,
-              currency: 'USD',
-              items: [{
-                item_name: planName,
-                item_category: 'subscription',
-                price: planValue,
-                quantity: 1
-              }]
-            });
-          }
-        }
-      });
-    } else {
-      alert('Payment system is loading. Please try again in a moment.');
+  const handleClick = async () => {
+    setError("");
+    trackSelectPlan(PLANS[plan].name, PLANS[plan].price);
+
+    const {
+      data: { user },
+    } = await createClient().auth.getUser();
+    if (!user) {
+      router.push(`/signup?plan=${plan}`);
+      return;
     }
+
+    const priceId = PADDLE_PRICE_IDS[plan];
+    const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
+    if (!priceId || !token || !window.Paddle) {
+      setError("Checkout is not available right now. Please try again later.");
+      return;
+    }
+
+    // Initialise Paddle.js once per page load
+    if (!window.__paddleReady) {
+      if (process.env.NEXT_PUBLIC_PADDLE_ENV !== "production")
+        window.Paddle.Environment.set("sandbox");
+      window.Paddle.Initialize({
+        token,
+        eventCallback: (event: any) => {
+          if (event?.name === "checkout.completed") {
+            const item = event.data?.items?.[0];
+            trackPurchase(
+              item?.product?.name || "subscription",
+              Number(event.data?.totals?.total ?? 0),
+            );
+          }
+        },
+      });
+      window.__paddleReady = true;
+    }
+
+    window.Paddle.Checkout.open({
+      items: [{ priceId, quantity: 1 }],
+      customer: { email: user.email },
+      customData: { user_id: user.id },
+      settings: {
+        displayMode: "overlay",
+        theme: "light",
+        successUrl: `${window.location.origin}/dashboard/settings?tab=billing&checkout=success`,
+      },
+    });
   };
 
   return (
-    <button onClick={handleClick} className={className}>
-      {children}
-    </button>
+    <>
+      <button type="button" onClick={handleClick} className={className}>
+        {children}
+      </button>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+    </>
   );
 }

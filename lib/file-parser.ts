@@ -1,68 +1,41 @@
-// import pdf from 'pdf-parse';
-// import mammoth from 'mammoth';
+// Text extraction for uploaded knowledge files (PDF, DOCX, TXT)
 
-/**
- * PDF 파일에서 텍스트 추출
- */
-export async function parsePDF(buffer: Buffer): Promise<string> {
-  // PDF parsing temporarily disabled
-  throw new Error('PDF 파일 지원이 곧 제공됩니다');
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+const PDF = "application/pdf";
+const DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// Browsers sometimes send an empty/generic MIME type, so fall back to the file extension
+export function detectFileType(file: File): "pdf" | "docx" | "txt" | null {
+  const name = file.name.toLowerCase();
+  if (file.type === PDF || name.endsWith(".pdf")) return "pdf";
+  if (file.type === DOCX || name.endsWith(".docx")) return "docx";
+  if (
+    file.type.startsWith("text/") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".md")
+  )
+    return "txt";
+  return null;
 }
 
-/**
- * DOCX 파일에서 텍스트 추출
- */
-export async function parseDOCX(buffer: Buffer): Promise<string> {
-  // DOCX parsing temporarily disabled
-  throw new Error('DOCX 파일 지원이 곧 제공됩니다');
-}
-
-/**
- * TXT 파일에서 텍스트 추출
- */
-export function parseTXT(buffer: Buffer): string {
-  try {
-    return buffer.toString('utf-8');
-  } catch (error) {
-    console.error('TXT 파싱 에러:', error);
-    throw new Error('TXT 파일을 읽을 수 없습니다');
+export async function extractText(
+  buffer: Buffer,
+  type: "pdf" | "docx" | "txt",
+): Promise<string> {
+  if (type === "pdf") {
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    try {
+      return (await parser.getText()).text;
+    } finally {
+      await parser.destroy();
+    }
   }
-}
-
-/**
- * 파일 타입에 따라 적절한 파서 선택
- */
-export async function parseFile(buffer: Buffer, mimeType: string): Promise<string> {
-  if (mimeType === 'application/pdf') {
-    return parsePDF(buffer);
-  } else if (
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    mimeType === 'application/msword'
-  ) {
-    return parseDOCX(buffer);
-  } else if (mimeType === 'text/plain') {
-    return parseTXT(buffer);
-  } else {
-    throw new Error('지원하지 않는 파일 형식입니다');
+  if (type === "docx") {
+    const mammoth = await import("mammoth");
+    return (await mammoth.extractRawText({ buffer })).value;
   }
-}
-
-/**
- * 파일 크기 검증 (최대 10MB)
- */
-export function validateFileSize(size: number, maxSize: number = 10 * 1024 * 1024): boolean {
-  return size <= maxSize;
-}
-
-/**
- * 파일 타입 검증
- */
-export function validateFileType(mimeType: string): boolean {
-  const allowedTypes = [
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/msword',
-    'text/plain',
-  ];
-  return allowedTypes.includes(mimeType);
+  return buffer.toString("utf-8");
 }

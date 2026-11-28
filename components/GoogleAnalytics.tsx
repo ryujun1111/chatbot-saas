@@ -1,10 +1,12 @@
 "use client";
 
-import Script from 'next/script';
+import Script from "next/script";
 
-const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || 'G-XXXXXXXXXX';
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
+// GA4 is only loaded when a real measurement ID is configured
 export default function GoogleAnalytics() {
+  if (!GA_MEASUREMENT_ID) return null;
   return (
     <>
       <Script
@@ -16,49 +18,44 @@ export default function GoogleAnalytics() {
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', '${GA_MEASUREMENT_ID}', {
-            page_path: window.location.pathname,
-          });
+          gtag('config', '${GA_MEASUREMENT_ID}');
         `}
       </Script>
     </>
   );
 }
 
-// 이벤트 추적 함수
 export const trackEvent = (eventName: string, params?: Record<string, any>) => {
-  if (typeof window !== 'undefined' && (window as any).gtag) {
-    (window as any).gtag('event', eventName, params);
+  if (typeof window !== "undefined" && (window as any).gtag) {
+    (window as any).gtag("event", eventName, params);
   }
 };
 
-// 결제 추적
+// Conversion: completed checkout
 export const trackPurchase = (plan: string, value: number) => {
-  trackEvent('purchase', {
+  trackEvent("purchase", {
     transaction_id: Date.now().toString(),
-    value: value,
-    currency: 'USD',
-    items: [{
-      item_name: plan,
-      item_category: 'subscription',
-      price: value,
-      quantity: 1
-    }]
+    value,
+    currency: "USD",
+    items: [
+      {
+        item_name: plan,
+        item_category: "subscription",
+        price: value,
+        quantity: 1,
+      },
+    ],
   });
 };
 
-// 가입 추적
-export const trackSignup = (method: string = 'email') => {
-  trackEvent('sign_up', { method });
+// Conversion: account created
+export const trackSignup = (method: string = "email") => {
+  trackEvent("sign_up", { method });
 };
 
-// 플랜 선택 추적
 export const trackSelectPlan = (plan: string, value: number) => {
-  trackEvent('select_item', {
-    item_list_name: 'pricing_plans',
-    items: [{
-      item_name: plan,
-      price: value
-    }]
+  trackEvent("select_item", {
+    item_list_name: "pricing_plans",
+    items: [{ item_name: plan, price: value }],
   });
 };

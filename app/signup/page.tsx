@@ -1,40 +1,50 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Bot, ArrowRight } from 'lucide-react';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Bot, ArrowRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { trackSignup } from "@/components/GoogleAnalytics";
 
 export default function SignupPage() {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Signup failed');
+        throw new Error(data.error || "Signup failed");
       }
 
-      // Success - redirect to dashboard
-      router.push('/dashboard');
+      // Account created — sign in to get a session cookie, then go to the dashboard
+      const { error: signInError } =
+        await createClient().auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+      if (signInError) throw new Error(signInError.message);
+      trackSignup("email");
+      router.replace("/dashboard");
+      router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Failed to create account');
+      setError(err.message || "Failed to create account");
       setLoading(false);
     }
   };
@@ -75,7 +85,10 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Full Name
               </label>
               <input
@@ -92,7 +105,10 @@ export default function SignupPage() {
 
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Email
               </label>
               <input
@@ -109,7 +125,10 @@ export default function SignupPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Password
               </label>
               <input
@@ -138,18 +157,21 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold rounded-lg hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{loading ? 'Creating account...' : 'Create Account'}</span>
+              <span>{loading ? "Creating account..." : "Create Account"}</span>
               <ArrowRight className="w-5 h-5" />
             </button>
 
             {/* Terms */}
             <p className="text-xs text-center text-gray-500">
-              By signing up, you agree to our{' '}
+              By signing up, you agree to our{" "}
               <Link href="/terms" className="text-blue-400 hover:text-blue-300">
                 Terms
-              </Link>{' '}
-              and{' '}
-              <Link href="/privacy" className="text-blue-400 hover:text-blue-300">
+              </Link>{" "}
+              and{" "}
+              <Link
+                href="/privacy"
+                className="text-blue-400 hover:text-blue-300"
+              >
                 Privacy Policy
               </Link>
             </p>
@@ -157,7 +179,7 @@ export default function SignupPage() {
             {/* Sign In Link */}
             <div className="text-center pt-4 border-t border-white/10">
               <p className="text-sm text-gray-400">
-                Already have an account?{' '}
+                Already have an account?{" "}
                 <Link
                   href="/login"
                   className="font-semibold text-blue-400 hover:text-blue-300 transition-colors"

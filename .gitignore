@@ -5,3 +5,6 @@ node_modules
 
 # Test environment (contains secrets)
 .env.test
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo

@@ -1,5 +1,11 @@
+export const metadata = {
+  title: 'Terms of Service - ChatBot AI',
+  description: 'Terms for using ChatBot AI, including subscriptions, acceptable use and our refund policy.',
+};
+
 export default function TermsOfService() {
   return (
+    <div className="min-h-screen bg-white text-gray-900">
     <div className="container mx-auto px-4 py-16 max-w-4xl">
       <h1 className="text-4xl font-bold mb-8">Terms of Service</h1>
       
@@ -134,6 +140,7 @@ export default function TermsOfService() {
           </p>
         </section>
       </div>
+    </div>
     </div>
   );
 }

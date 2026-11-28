@@ -12,7 +12,7 @@
 
 **계정 정보:**
 - Email: ryujy0915@gmail.com
-- Password: ChatBot2026!AI#Paddle
+- Password: [REDACTED — change this password, it was exposed in git history]
 - Business: ChatBot AI
 - Status: Live 계정 활성화
 

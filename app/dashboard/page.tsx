@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { 
   Bot, 
@@ -13,14 +14,56 @@ import {
   LogOut
 } from 'lucide-react';
 
+interface Summary {
+  totalChatbots: number;
+  chatbotsThisMonth: number;
+  totalMessages: number;
+  monthMessages: number;
+  uniqueVisitors: number;
+  avgResponseTime: number;
+}
+interface BotRow { id: string; name: string; status: string; color: string }
+
 export default function DashboardPage() {
-  const [userEmail, setUserEmail] = useState<string>('demo@example.com');
-  const [loading, setLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [usage, setUsage] = useState<{ planName: string; used: number; limit: number } | null>(null);
+  const [bots, setBots] = useState<BotRow[]>([]);
+  const [botCounts, setBotCounts] = useState<Record<string, number>>({});
   const router = useRouter();
 
-  const handleLogout = () => {
-    router.push('/login');
+  // Real per-user data: session user, 30-day analytics and the chatbot list
+  useEffect(() => {
+    const supabase = createClient();
+    Promise.all([
+      supabase.auth.getUser(),
+      fetch('/api/analytics?period=30').then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/chatbots').then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([{ data }, analytics, list]) => {
+        if (!data.user) {
+          router.replace('/login');
+          return;
+        }
+        setUserEmail(data.user.email || '');
+        if (analytics) {
+          setSummary(analytics.summary);
+          setUsage(analytics.usage);
+          setBotCounts(Object.fromEntries(analytics.charts.chatbots.map((c: { id: string; count: number }) => [c.id, c.count])));
+        }
+        setBots(list?.chatbots || []);
+      })
+      .finally(() => setLoading(false));
+  }, [router]);
+
+  const handleLogout = async () => {
+    await createClient().auth.signOut();
+    router.replace('/login');
+    router.refresh();
   };
+
+  const formatMs = (ms: number) => (ms ? (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`) : '-');
 
   if (loading) {
     return (
@@ -82,6 +125,12 @@ export default function DashboardPage() {
               <p className="text-sm md:text-base text-gray-400">
                 Manage your AI chatbots and analyze conversations
               </p>
+              {usage && (
+                <p className="mt-2 text-xs md:text-sm text-gray-500">
+                  {usage.planName} plan · {usage.used.toLocaleString()} / {usage.limit.toLocaleString()} messages used this month ·{' '}
+                  <Link href="/pricing" className="text-blue-400 hover:text-blue-300">Upgrade</Link>
+                </p>
+              )}
             </div>
 
             {/* Stats Grid */}
@@ -94,8 +143,8 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-xs md:text-sm text-gray-400">Total Chatbots</span>
                 </div>
-                <div className="text-2xl md:text-3xl font-bold text-white mb-1">12</div>
-                <div className="text-xs md:text-sm text-green-400">+2 this month</div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">{summary?.totalChatbots ?? 0}</div>
+                <div className="text-xs md:text-sm text-green-400">+{summary?.chatbotsThisMonth ?? 0} this month</div>
               </div>
 
               {/* Stat Card 2 */}
@@ -106,8 +155,8 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-xs md:text-sm text-gray-400">Total Chats</span>
                 </div>
-                <div className="text-2xl md:text-3xl font-bold text-white mb-1">2,547</div>
-                <div className="text-xs md:text-sm text-green-400">+23% this week</div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">{(summary?.totalMessages ?? 0).toLocaleString()}</div>
+                <div className="text-xs md:text-sm text-green-400">{(summary?.monthMessages ?? 0).toLocaleString()} this month</div>
               </div>
 
               {/* Stat Card 3 */}
@@ -116,10 +165,10 @@ export default function DashboardPage() {
                   <div className="w-8 h-8 md:w-10 md:h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
                     <Users className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
                   </div>
-                  <span className="text-xs md:text-sm text-gray-400">Active Users</span>
+                  <span className="text-xs md:text-sm text-gray-400">Visitors</span>
                 </div>
-                <div className="text-2xl md:text-3xl font-bold text-white mb-1">892</div>
-                <div className="text-xs md:text-sm text-green-400">+15% this week</div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">{(summary?.uniqueVisitors ?? 0).toLocaleString()}</div>
+                <div className="text-xs md:text-sm text-green-400">last 30 days</div>
               </div>
 
               {/* Stat Card 4 */}
@@ -130,8 +179,8 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-xs md:text-sm text-gray-400">Avg Response</span>
                 </div>
-                <div className="text-2xl md:text-3xl font-bold text-white mb-1">1.2s</div>
-                <div className="text-xs md:text-sm text-green-400">-0.3s faster</div>
+                <div className="text-2xl md:text-3xl font-bold text-white mb-1">{formatMs(summary?.avgResponseTime ?? 0)}</div>
+                <div className="text-xs md:text-sm text-green-400">last 30 days</div>
               </div>
             </div>
 
@@ -139,7 +188,7 @@ export default function DashboardPage() {
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-xl md:rounded-2xl border border-white/10 p-4 md:p-6 lg:p-8 mb-6 md:mb-8">
               <h2 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Quick Actions</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                <Link href="/try" className="block">
+                <Link href="/dashboard/chatbots/new" className="block">
                   <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg md:rounded-xl hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300">
                     <Plus className="w-5 h-5 md:w-6 md:h-6 text-white" />
                     <div className="text-left">
@@ -149,78 +198,54 @@ export default function DashboardPage() {
                   </button>
                 </Link>
 
-                <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
+                <Link href="/dashboard/analytics" className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
                   <MessageSquare className="w-5 h-5 md:w-6 md:h-6 text-blue-400" />
                   <div className="text-left">
                     <div className="text-sm md:text-base font-semibold text-white">View Analytics</div>
                     <div className="text-xs text-gray-400">See performance</div>
                   </div>
-                </button>
+                </Link>
 
-                <button className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
+                <Link href="/dashboard/settings" className="w-full flex items-center gap-3 p-4 md:p-5 bg-gray-700/50 rounded-lg md:rounded-xl hover:bg-gray-700 transition-all duration-300">
                   <Settings className="w-5 h-5 md:w-6 md:h-6 text-purple-400" />
                   <div className="text-left">
                     <div className="text-sm md:text-base font-semibold text-white">Settings</div>
-                    <div className="text-xs text-gray-400">Configure your bots</div>
+                    <div className="text-xs text-gray-400">Plan, billing &amp; account</div>
                   </div>
-                </button>
+                </Link>
               </div>
             </div>
 
             {/* Recent Chatbots */}
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-xl md:rounded-2xl border border-white/10 p-4 md:p-6 lg:p-8">
-              <h2 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Recent Chatbots</h2>
+              <div className="flex items-center justify-between mb-4 md:mb-6">
+                <h2 className="text-lg md:text-xl font-bold text-white">Your Chatbots</h2>
+                <Link href="/dashboard/chatbots" className="text-sm text-blue-400 hover:text-blue-300">View all →</Link>
+              </div>
               <div className="space-y-3 md:space-y-4">
-                {/* Chatbot 1 */}
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-blue-400" />
-                    </div>
-                    <div>
-                      <div className="text-sm md:text-base font-semibold text-white">Support Bot</div>
-                      <div className="text-xs md:text-sm text-gray-400">234 conversations</div>
-                    </div>
+                {bots.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-400 mb-4">You haven&apos;t created a chatbot yet.</p>
+                    <Link href="/dashboard/chatbots/new" className="btn-primary text-sm px-6 py-2.5">Create your first chatbot</Link>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  </div>
-                </div>
-
-                {/* Chatbot 2 */}
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-purple-400" />
+                )}
+                {bots.slice(0, 5).map((bot) => (
+                  <Link key={bot.id} href={`/dashboard/chatbots/${bot.id}`} className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5 hover:border-white/20 transition-colors">
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${bot.color}26` }}>
+                        <Bot className="w-5 h-5 md:w-6 md:h-6" style={{ color: bot.color }} />
+                      </div>
+                      <div>
+                        <div className="text-sm md:text-base font-semibold text-white">{bot.name}</div>
+                        <div className="text-xs md:text-sm text-gray-400">{(botCounts[bot.id] || 0).toLocaleString()} messages (30 days)</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm md:text-base font-semibold text-white">Sales Bot</div>
-                      <div className="text-xs md:text-sm text-gray-400">156 conversations</div>
+                    <div className="flex items-center gap-2">
+                      <span className={`hidden sm:inline text-xs md:text-sm ${bot.status === 'active' ? 'text-green-400' : 'text-gray-500'}`}>{bot.status === 'active' ? 'Active' : 'Inactive'}</span>
+                      <div className={`w-2 h-2 rounded-full ${bot.status === 'active' ? 'bg-green-400' : 'bg-gray-500'}`}></div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  </div>
-                </div>
-
-                {/* Chatbot 3 */}
-                <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg md:rounded-xl border border-white/5">
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-green-500/10 rounded-lg flex items-center justify-center">
-                      <Bot className="w-5 h-5 md:w-6 md:h-6 text-green-400" />
-                    </div>
-                    <div>
-                      <div className="text-sm md:text-base font-semibold text-white">FAQ Bot</div>
-                      <div className="text-xs md:text-sm text-gray-400">89 conversations</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline text-xs md:text-sm text-green-400">Active</span>
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  </div>
-                </div>
+                  </Link>
+                ))}
               </div>
             </div>
           </div>

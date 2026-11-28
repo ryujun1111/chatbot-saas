@@ -1,5 +1,11 @@
+export const metadata = {
+  title: 'Privacy Policy - ChatBot AI',
+  description: "How ChatBot AI collects, uses and protects your data and your website visitors' chat messages.",
+};
+
 export default function PrivacyPolicy() {
   return (
+    <div className="min-h-screen bg-white text-gray-900">
     <div className="container mx-auto px-4 py-16 max-w-4xl">
       <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
       
@@ -49,7 +55,7 @@ export default function PrivacyPolicy() {
           <h2 className="text-2xl font-semibold mb-4">4. Third-Party Services</h2>
           <p>We use the following third-party services:</p>
           <ul>
-            <li><strong>OpenAI:</strong> AI model for generating chatbot responses</li>
+            <li><strong>OpenAI:</strong> AI models for generating chatbot responses and search embeddings</li>
             <li><strong>Supabase:</strong> Database and authentication</li>
             <li><strong>Paddle:</strong> Payment processing</li>
             <li><strong>Vercel:</strong> Hosting and deployment</li>
@@ -89,6 +95,7 @@ export default function PrivacyPolicy() {
           </p>
         </section>
       </div>
+    </div>
     </div>
   );
 }
