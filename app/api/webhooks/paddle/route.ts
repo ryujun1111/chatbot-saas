@@ -88,11 +88,24 @@ export async function POST(request: NextRequest) {
     .select("paddle_customer_id, paddle_subscription_id")
     .eq("id", userId)
     .maybeSingle();
-  if (account?.paddle_customer_id && data.customer_id && account.paddle_customer_id !== data.customer_id) {
+  // Unknown account (e.g. deleted, or checkout from another environment): acknowledge so Paddle stops retrying
+  if (!account) {
+    console.error("Paddle webhook: account does not exist", userId);
+    return NextResponse.json({ received: true, ignored: "user_not_found" });
+  }
+  if (
+    account?.paddle_customer_id &&
+    data.customer_id &&
+    account.paddle_customer_id !== data.customer_id
+  ) {
     console.error("Paddle webhook: customer mismatch for user", userId);
     return NextResponse.json({ received: true, ignored: "customer_mismatch" });
   }
-  if (plan === "free" && account?.paddle_subscription_id && account.paddle_subscription_id !== subscriptionId) {
+  if (
+    plan === "free" &&
+    account?.paddle_subscription_id &&
+    account.paddle_subscription_id !== subscriptionId
+  ) {
     return NextResponse.json({ received: true, ignored: "other_subscription" });
   }
 
