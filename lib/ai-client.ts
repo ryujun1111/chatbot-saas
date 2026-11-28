@@ -114,7 +114,7 @@ export interface ChatCompletionOptions {
 }
 
 /**
- * DeepSeek R1으로 채팅 완성 생성
+ * OpenAI GPT-4o-mini로 채팅 완성 생성 (임시: OpenRouter 크레딧 문제로 대체)
  * @param options 채팅 옵션
  * @returns 생성된 응답 텍스트
  */
@@ -122,8 +122,9 @@ export async function createChatCompletion(options: ChatCompletionOptions): Prom
   try {
     const { messages, temperature = 0.7, maxTokens } = options;
 
-    const response = await deepseekClient.chat.completions.create({
-      model: DEEPSEEK_MODEL,
+    // OpenAI GPT-4o-mini 사용 (임시)
+    const response = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
       messages: messages as any[],
       temperature,
       ...(maxTokens && { max_tokens: maxTokens }),

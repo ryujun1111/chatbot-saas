@@ -90,37 +90,53 @@ const { data: documents } = await supabaseAdmin.rpc('match_documents', {
 
 ---
 
-## ❌ 실패한 테스트
+## ✅ 추가 성공 테스트
 
-### 4. AI 채팅 답변 생성 (DeepSeek R1)
+### 4. AI 채팅 답변 생성 (GPT-4o-mini)
 ```
-상태: ❌ 실패
-오류: 401 User not found
-원인: OpenRouter 크레딧 부족
+상태: ✅ 성공
+모델: gpt-4o-mini (OpenRouter 크레딧 문제로 대체)
+응답: "The pricing for the Starter plan is $19 per month..."
+Sources: 1개
 ```
 
-**에러 로그:**
-```
-Error creating chat completion: Error: 401 User not found.
-  status: 401,
-  error: { message: 'User not found.', code: 401 }
-```
+**해결 과정:**
+1. OpenRouter 크레딧 $10 충전 완료 ($9.81 available)
+2. 하지만 계정/워크스페이스 크레딧 분리 문제 발견
+3. 빠른 해결을 위해 OpenAI GPT-4o-mini로 대체
+4. `lib/ai-client.ts` 수정하여 openaiClient 사용
 
 **OpenRouter 계정 상태:**
 ```
-Total available: -$0.19
-Pay-as-you-go balance: 마이너스
-Transaction history: 0건
+Total available: $9.81 ✅
+Transaction: Nov 28, 2026, 10:02 AM - $10.00
+상태: 충전 완료, 계정 분리 문제로 임시 GPT 사용
 ```
 
-**원인 분석:**
-- OpenRouter 크레딧이 -$0.19 (마이너스)
-- 무료 티어 소진 또는 만료
-- API 키는 유효하지만 크레딧 부족으로 호출 차단
+### 5. URL 크롤링 및 문서 저장
+```
+상태: ✅ 성공
+URL: https://example.com
+크롤링: Example Domain (156 chars)
+문서 저장: 1개
+```
 
-**해결 방법:**
-1. ✅ OpenRouter 크레딧 충전 ($10 추천)
-2. ✅ 또는 OpenAI GPT-4o-mini로 임시 대체
+### 6. 크롤링 데이터로 AI 답변
+```
+상태: ✅ 성공
+질문: "What is Example Domain?"
+응답: "Example Domain is a domain specifically set up..."
+Sources: 1개
+```
+
+### 7. 외부 위젯 테스트
+```
+상태: ✅ 성공
+페이지: /widget-test.html
+위젯 버튼: 우측 하단 표시됨
+채팅 테스트: "What is your pricing?"
+응답: "Our pricing starts at $19 per month for the Starter plan..."
+```
 
 ---
 
@@ -131,11 +147,11 @@ Transaction history: 0건
 | OpenAI 임베딩 | ✅ 성공 | 1536 dimensions |
 | Supabase 저장 | ✅ 성공 | 1 document |
 | Vector Search | ✅ 수정됨 | 임계값 0.3으로 조정 |
-| AI 채팅 (DeepSeek) | ❌ 실패 | OpenRouter 크레딧 부족 |
-| URL Crawling | ⏸️ 미완료 | AI 답변 먼저 필요 |
-| Widget 테스트 | ⏸️ 미완료 | AI 답변 먼저 필요 |
+| AI 채팅 (GPT-4o-mini) | ✅ 성공 | OpenRouter → OpenAI 대체 |
+| URL Crawling | ✅ 성공 | example.com 크롤링 |
+| Widget 테스트 | ✅ 성공 | 비인증 사용자 테스트 |
 
-**완료율:** 3/6 (50%)
+**완료율:** 7/7 (100%) ✅
 
 ---
 
@@ -150,6 +166,31 @@ const { data: documents } = await supabaseAdmin.rpc('match_documents', {
   match_count: 3,
   p_chatbot_id: chatbotId,
 });
+```
+
+### lib/ai-client.ts
+```typescript
+// OpenAI GPT-4o-mini로 임시 대체
+export async function createChatCompletion(options: ChatCompletionOptions): Promise<string> {
+  const response = await openaiClient.chat.completions.create({
+    model: 'gpt-4o-mini',  // DeepSeek → GPT-4o-mini
+    messages: messages as any[],
+    temperature,
+    ...(maxTokens && { max_tokens: maxTokens }),
+  });
+}
+```
+
+### public/widget-test.html
+```html
+<!-- 외부 위젯 테스트 페이지 추가 -->
+<script>
+  window.ChatBotConfig = {
+    chatbotId: '924edfe1-2e85-4248-90ce-9117d8c12a98',
+    primaryColor: '#667eea',
+    apiEndpoint: 'http://localhost:3000'
+  };
+</script>
 ```
 
 ### app/api/crawl/route.ts
@@ -204,25 +245,40 @@ OpenAI Embeddings:
 
 ## 🚀 다음 단계
 
-### 즉시 필요한 작업
-1. **OpenRouter 크레딧 충전**
-   - https://openrouter.ai/settings/credits
-   - $10 추천 (약 7,000만 토큰)
-   - 또는 OpenAI GPT-4o-mini로 대체
+### 완료된 작업
+1. ✅ **OpenRouter 크레딧 충전**
+   - $10.00 충전 완료 (Nov 28, 10:02 AM)
+   - 현재 잔액: $9.81
+   - 계정/워크스페이스 분리 문제로 GPT 사용
 
-2. **충전 후 재테스트**
-   - AI 채팅 답변 생성
-   - URL 크롤링 → 문서 저장 → AI 답변
-   - 위젯 설치 → 비회원 테스트
+2. ✅ **전체 테스트 완료**
+   - AI 채팅: GPT-4o-mini로 성공
+   - URL 크롤링: example.com 성공
+   - 위젯: 비인증 사용자 테스트 성공
 
-3. **Vercel 환경 변수 업데이트**
-   - 현재: .env.local에만 새 OpenAI 키
-   - 필요: Vercel Production에도 반영
+3. **Vercel 배포 (다음 단계)**
+   - 현재: localhost 테스트 완료
+   - 필요: Production 배포 및 환경 변수 설정
+
+### Production 배포 (다음 단계)
+1. Vercel 환경 변수 설정
+   - OPENAI_API_KEY
+   - NEXT_PUBLIC_SUPABASE_URL
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+   - SUPABASE_SERVICE_ROLE_KEY
+
+2. Git Push & 자동 배포
+   - 변경사항 커밋
+   - Vercel 자동 배포 확인
+
+3. Production 테스트
+   - 실제 URL에서 위젯 테스트
+   - Paddle 결제 연동 (추후)
 
 ### 선택 사항
 - Paddle Webhook 테스트 (Sandbox)
-- Full end-to-end 사용자 플로우
 - 성능 최적화 (임베딩 캐싱 등)
+- DeepSeek R1으로 복귀 (OpenRouter 계정 문제 해결 후)
 
 ---
 
@@ -254,8 +310,33 @@ OpenAI Embeddings:
 | Document Upload | ✅ | Document ID: cd257dd7-acec-48cb-918a-8bee00834b39 |
 | OpenAI Embeddings | ✅ | 1536 dimensions, 41 tokens |
 | Vector Search | ✅ | Similarity 0.308, threshold 0.3 |
-| DeepSeek Chat | ❌ | 401 User not found (크레딧 부족) |
+| AI Chat (GPT-4o-mini) | ✅ | 정상 작동 (DeepSeek 대체) |
+| URL Crawling | ✅ | example.com 크롤링 완료 |
+| Widget (비인증) | ✅ | 테스트 페이지 작동 확인 |
 
 ---
 
-**다음 보고 시점:** OpenRouter 크레딧 충전 후 전체 테스트 완료 시
+**다음 보고 시점:** Vercel Production 배포 후
+
+---
+
+## 🎉 테스트 완료 요약
+
+**총 테스트:** 7개  
+**성공:** 7개 (100%) ✅  
+**실패:** 0개
+
+**핵심 성과:**
+- ✅ OpenAI 임베딩 & Supabase 연동
+- ✅ Vector Search 최적화 (임계값 조정)
+- ✅ AI 채팅 (GPT-4o-mini)
+- ✅ URL 크롤링 & 문서 저장
+- ✅ 외부 위젯 통합
+
+**비용 분석:**
+- OpenAI Embeddings: $0.02/1M 토큰
+- GPT-4o-mini: $0.15/1M input, $0.60/1M output
+- 월 100명 예상: $1-2 (저렴!)
+
+**Git Commit:** bab58867 → (최종 커밋)
+**다음 단계:** Vercel Production 배포
