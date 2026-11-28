@@ -7,9 +7,10 @@ export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-white text-gray-900">
     <div className="container mx-auto px-4 py-16 max-w-4xl">
+      <a href="/" className="inline-block mb-6 text-sm text-blue-600 hover:underline">← Back to ChatBot AI</a>
       <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
       
-      <div className="prose prose-lg max-w-none">
+      <div className="prose prose-lg max-w-none [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_p]:mb-3">
         <p className="text-gray-600 mb-8">
           Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
         </p>

@@ -170,13 +170,13 @@ export default function ResultPage() {
                   placeholder="Ask a question about the website..."
                   maxLength={500}
                   aria-label="Your question"
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600 text-gray-900"
+                  className="flex-1 min-w-0 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600 text-gray-900"
                   disabled={isTyping}
                 />
                 <button
                   type="submit"
                   disabled={!input.trim() || isTyping}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="shrink-0 px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   Send
                 </button>

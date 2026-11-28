@@ -77,7 +77,7 @@ export default function Home() {
 
               {/* CTA Buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4 pt-2 md:pt-4 px-4">
-                <Link href="/demo" className="w-full sm:w-auto">
+                <Link href="/try" className="w-full sm:w-auto">
                   <button className="btn-primary w-full sm:w-auto flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 text-sm md:text-base">
                     <Rocket className="w-4 h-4 md:w-5 md:h-5" />
                     <span className="whitespace-nowrap">Try It Free - No Signup</span>
@@ -257,7 +257,7 @@ export default function Home() {
                     Start Free Trial
                   </button>
                 </Link>
-                <Link href="/demo" className="w-full sm:w-auto">
+                <Link href="/try" className="w-full sm:w-auto">
                   <button className="btn-secondary w-full sm:w-auto px-6 md:px-8 py-3 md:py-4 text-sm md:text-base">
                     Watch Demo
                   </button>

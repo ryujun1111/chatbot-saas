@@ -30,39 +30,41 @@ nav {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Buttons */
-.btn-primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
-  transition: all 0.3s ease;
-  display: inline-block;
-  text-decoration: none;
-}
+/* Buttons — in the components layer so Tailwind utilities (flex, px-*, py-*) on the same element win */
+@layer components {
+  .btn-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+    transition: all 0.3s ease;
+    display: inline-block;
+    text-decoration: none;
+  }
 
-.btn-primary:hover {
-  box-shadow: 0 15px 40px rgba(59, 130, 246, 0.5);
-  transform: translateY(-2px);
-}
+  .btn-primary:hover {
+    box-shadow: 0 15px 40px rgba(59, 130, 246, 0.5);
+    transform: translateY(-2px);
+  }
 
-.btn-secondary {
-  background: transparent;
-  color: white;
-  padding: 12px 24px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  display: inline-block;
-  text-decoration: none;
-}
+  .btn-secondary {
+    background: transparent;
+    color: white;
+    padding: 12px 24px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    display: inline-block;
+    text-decoration: none;
+  }
 
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.2);
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
 }
 
 /* Badge */

@@ -171,7 +171,7 @@ export default function PricingPage() {
                     <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
                   </button>
                 </Link>
-                <Link href="/demo" className="w-full sm:w-auto">
+                <Link href="/try" className="w-full sm:w-auto">
                   <button className="btn-secondary w-full sm:w-auto px-6 md:px-8 py-3 md:py-4 text-sm md:text-base">
                     Try Demo
                   </button>

@@ -144,6 +144,26 @@ export default function SignupPage() {
               />
             </div>
 
+            {/* Terms & privacy consent (required) */}
+            <label className="flex items-start gap-3 text-sm text-gray-400">
+              <input
+                type="checkbox"
+                required
+                className="mt-1 h-4 w-4 rounded border-white/20 bg-gray-900/50"
+              />
+              <span>
+                I agree to the{" "}
+                <Link href="/terms" target="_blank" className="text-blue-400 hover:text-blue-300">
+                  Terms of Service
+                </Link>{" "}
+                and the collection and use of my name and email as described in the{" "}
+                <Link href="/privacy" target="_blank" className="text-blue-400 hover:text-blue-300">
+                  Privacy Policy
+                </Link>
+                .
+              </span>
+            </label>
+
             {/* Error Message */}
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
@@ -161,20 +181,7 @@ export default function SignupPage() {
               <ArrowRight className="w-5 h-5" />
             </button>
 
-            {/* Terms */}
-            <p className="text-xs text-center text-gray-500">
-              By signing up, you agree to our{" "}
-              <Link href="/terms" className="text-blue-400 hover:text-blue-300">
-                Terms
-              </Link>{" "}
-              and{" "}
-              <Link
-                href="/privacy"
-                className="text-blue-400 hover:text-blue-300"
-              >
-                Privacy Policy
-              </Link>
-            </p>
+
 
             {/* Sign In Link */}
             <div className="text-center pt-4 border-t border-white/10">
