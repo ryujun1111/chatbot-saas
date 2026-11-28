@@ -33,6 +33,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Schedule daily cleanup at 03:00 UTC (requires pg_cron extension)
+-- Run manually: SELECT cron.schedule('cleanup-session-messages', '0 3 * * *', 'SELECT cleanup_old_session_messages()');
+-- Or enable pg_cron in Supabase dashboard and run the above SQL
+
 -- Enable RLS
 ALTER TABLE session_messages ENABLE ROW LEVEL SECURITY;
 

@@ -21,6 +21,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: 'sessionId is required' },
+        { status: 400 }
+      )
+    }
+
     if (message.length > 2000) {
       return NextResponse.json(
         { error: 'Message too long (max 2000 characters)' },
@@ -32,18 +39,16 @@ export async function POST(request: NextRequest) {
     const clientIP = getClientIP(request);
     
     // Check session-based rate limit (50 messages per 24 hours)
-    if (sessionId) {
-      const sessionLimit = await checkSessionRateLimit(sessionId, 50);
-      if (!sessionLimit.allowed) {
-        return NextResponse.json(
-          { 
-            error: sessionLimit.reason || 'Session message limit exceeded',
-            remaining: sessionLimit.remaining,
-            resetAt: sessionLimit.resetAt
-          },
-          { status: 429 }
-        );
-      }
+    const sessionLimit = await checkSessionRateLimit(sessionId, 50);
+    if (!sessionLimit.allowed) {
+      return NextResponse.json(
+        { 
+          error: sessionLimit.reason || 'Session message limit exceeded',
+          remaining: sessionLimit.remaining,
+          resetAt: sessionLimit.resetAt
+        },
+        { status: 429 }
+      );
     }
     
     // Check IP-based rate limit (100 messages per hour)
@@ -168,10 +173,8 @@ ${context}`,
       maxTokens: 500,
     })
 
-    // 8. Record message for rate limiting
-    if (sessionId) {
-      await recordMessage(sessionId, chatbotId, clientIP);
-    }
+    // 8. Record message for rate limiting (required)
+    await recordMessage(sessionId, chatbotId, clientIP);
 
     // 9. Return response
     return NextResponse.json({

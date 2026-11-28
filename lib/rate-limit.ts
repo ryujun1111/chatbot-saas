@@ -25,6 +25,14 @@ export async function checkSessionRateLimit(
   sessionId: string,
   limit: number = 50
 ): Promise<RateLimitResult> {
+  if (!sessionId) {
+    return {
+      allowed: false,
+      remaining: 0,
+      reason: 'Session ID required'
+    };
+  }
+
   try {
     // Get session message count from last 24 hours
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -37,8 +45,12 @@ export async function checkSessionRateLimit(
 
     if (error) {
       console.error('Error checking session rate limit:', error);
-      // Fail open - allow the request if we can't check
-      return { allowed: true, remaining: limit };
+      // Fail-safe: deny on error
+      return {
+        allowed: false,
+        remaining: 0,
+        reason: 'Rate limit service unavailable'
+      };
     }
 
     const count = data?.length || 0;
@@ -59,8 +71,12 @@ export async function checkSessionRateLimit(
     };
   } catch (error) {
     console.error('Session rate limit check failed:', error);
-    // Fail open
-    return { allowed: true, remaining: limit };
+    // Fail-safe: deny on exception
+    return {
+      allowed: false,
+      remaining: 0,
+      reason: 'Rate limit error'
+    };
   }
 }
 
@@ -105,7 +121,12 @@ export async function checkIPRateLimit(
     };
   } catch (error) {
     console.error('IP rate limit check failed:', error);
-    return { allowed: true, remaining: limit };
+    // Fail-safe: deny on exception
+    return {
+      allowed: false,
+      remaining: 0,
+      reason: 'Rate limit error'
+    };
   }
 }
 

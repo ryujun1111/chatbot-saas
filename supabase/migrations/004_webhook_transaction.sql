@@ -13,6 +13,7 @@ CREATE OR REPLACE FUNCTION process_subscription_event(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_result JSON;
@@ -113,11 +114,19 @@ ADD COLUMN IF NOT EXISTS success BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS error_message TEXT,
 ADD COLUMN IF NOT EXISTS payload JSONB;
 
+-- Add paddle_subscription_id to users if not exists
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS paddle_subscription_id TEXT;
+
 -- Index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_webhook_events_user 
 ON webhook_events(user_id, created_at DESC);
 
+-- Revoke public execute, grant only to service_role
+REVOKE ALL ON FUNCTION process_subscription_event FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION process_subscription_event TO service_role;
+
 -- Comments
-COMMENT ON FUNCTION process_subscription_event IS 'Atomically process Paddle webhook events';
+COMMENT ON FUNCTION process_subscription_event IS 'Atomically process Paddle webhook events (service_role only)';
 COMMENT ON COLUMN webhook_events.success IS 'Whether event processing succeeded';
 COMMENT ON COLUMN webhook_events.error_message IS 'Error details if processing failed';

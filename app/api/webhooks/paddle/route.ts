@@ -95,10 +95,10 @@ export async function POST(request: NextRequest) {
     if (eventType === 'transaction.completed') {
       const transaction = body.data;
       const customerId = transaction.customer_id;
-      const transactionId = transaction.id;
+      const subscriptionId = transaction.subscription_id;
       const priceId = transaction.items?.[0]?.price?.id;
 
-      if (!customerId || !transactionId || !priceId) {
+      if (!customerId || !priceId) {
         console.error('Missing required transaction data');
         return NextResponse.json(
           { error: 'Invalid transaction data' },
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       // Find user by paddle_customer_id
       const { data: user, error: findError } = await supabase
         .from('users')
-        .select('id, email')
+        .select('id')
         .eq('paddle_customer_id', customerId)
         .single();
 
@@ -138,78 +138,74 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Atomic transaction: update user + record event
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          plan: planConfig.plan,
-          message_limit: planConfig.limit,
-          messages_used: 0,
-          paddle_transaction_id: transactionId,
-          subscription_status: 'active',
-          subscription_started_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+      // Use atomic RPC function
+      const { data: result, error: rpcError } = await supabase.rpc(
+        'process_subscription_event',
+        {
+          p_user_id: user.id,
+          p_event_id: eventId,
+          p_event_type: eventType,
+          p_subscription_id: subscriptionId || '',
+          p_plan: planConfig.plan,
+          p_message_limit: planConfig.limit,
+          p_status: 'active'
+        }
+      );
 
-      if (updateError) {
-        console.error('Failed to update user:', updateError);
+      if (rpcError) {
+        console.error('RPC failed:', rpcError);
         return NextResponse.json(
-          { error: 'Database update failed' },
+          { error: 'Failed to process subscription' },
           { status: 500 }
         );
       }
 
-      // Record event
-      await supabase
-        .from('webhook_events')
-        .insert({ 
-          event_id: eventId, 
-          event_type: eventType,
-          processed_at: new Date().toISOString()
-        });
-
-      console.log(`User ${user.id} upgraded to ${planConfig.plan}`);
+      console.log('Subscription processed:', result);
     }
 
-    // 4. Handle subscription.canceled (downgrade to free, still usable)
+    // 4. Handle subscription.canceled
     else if (eventType === 'subscription.canceled') {
       const subscription = body.data;
       const customerId = subscription.customer_id;
+      const subscriptionId = subscription.id;
 
-      const { error } = await supabase
+      const { data: user } = await supabase
         .from('users')
-        .update({
-          subscription_status: 'active', // Keep active but downgrade plan
-          plan: 'free',
-          message_limit: 50,
-          updated_at: new Date().toISOString()
-        })
-        .eq('paddle_customer_id', customerId);
+        .select('id')
+        .eq('paddle_customer_id', customerId)
+        .single();
 
-      if (error) {
-        console.error('Failed to downgrade subscription:', error);
-        return NextResponse.json(
-          { error: 'Failed to downgrade subscription' },
-          { status: 500 }
-        );
+      if (!user) {
+        console.error('User not found:', customerId);
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      await supabase
-        .from('webhook_events')
-        .insert({ 
-          event_id: eventId, 
-          event_type: eventType,
-          processed_at: new Date().toISOString()
-        });
+      const { data: result, error: rpcError } = await supabase.rpc(
+        'process_subscription_event',
+        {
+          p_user_id: user.id,
+          p_event_id: eventId,
+          p_event_type: eventType,
+          p_subscription_id: subscriptionId,
+          p_plan: 'free',
+          p_message_limit: 50,
+          p_status: 'canceled'
+        }
+      );
 
-      console.log(`Subscription canceled, downgraded to free: ${customerId}`);
+      if (rpcError) {
+        console.error('RPC failed:', rpcError);
+        return NextResponse.json({ error: 'Failed to cancel' }, { status: 500 });
+      }
+
+      console.log('Subscription canceled:', result);
     }
 
     // 5. Handle subscription.updated
     else if (eventType === 'subscription.updated') {
       const subscription = body.data;
       const customerId = subscription.customer_id;
+      const subscriptionId = subscription.id;
       const newPriceId = subscription.items?.[0]?.price?.id;
 
       const planMapping: { [key: string]: { plan: string; limit: number } } = {
@@ -221,63 +217,73 @@ export async function POST(request: NextRequest) {
 
       const newPlan = planMapping[newPriceId];
       if (newPlan) {
-        const { error } = await supabase
+        const { data: user } = await supabase
           .from('users')
-          .update({
-            plan: newPlan.plan,
-            message_limit: newPlan.limit,
-            updated_at: new Date().toISOString()
-          })
-          .eq('paddle_customer_id', customerId);
+          .select('id')
+          .eq('paddle_customer_id', customerId)
+          .single();
 
-        if (error) {
-          console.error('Failed to update plan:', error);
-          return NextResponse.json(
-            { error: 'Failed to update plan' },
-            { status: 500 }
-          );
+        if (!user) {
+          console.error('User not found:', customerId);
+          return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        await supabase
-          .from('webhook_events')
-          .insert({ 
-            event_id: eventId, 
-            event_type: eventType,
-            processed_at: new Date().toISOString()
-          });
+        const { data: result, error: rpcError } = await supabase.rpc(
+          'process_subscription_event',
+          {
+            p_user_id: user.id,
+            p_event_id: eventId,
+            p_event_type: eventType,
+            p_subscription_id: subscriptionId,
+            p_plan: newPlan.plan,
+            p_message_limit: newPlan.limit,
+            p_status: subscription.status || 'active'
+          }
+        );
 
-        console.log(`Plan updated to ${newPlan.plan} for ${customerId}`);
+        if (rpcError) {
+          console.error('RPC failed:', rpcError);
+          return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+        }
+
+        console.log('Subscription updated:', result);
       }
     }
 
-    // 6. Handle payment failure (block access)
+    // 6. Handle payment failure
     else if (eventType === 'transaction.payment_failed') {
       const transaction = body.data;
       const customerId = transaction.customer_id;
 
-      const { error } = await supabase
+      const { data: user } = await supabase
         .from('users')
-        .update({
-          subscription_status: 'payment_failed',
-          plan: 'free',
-          message_limit: 50,
-          updated_at: new Date().toISOString()
-        })
-        .eq('paddle_customer_id', customerId);
+        .select('id')
+        .eq('paddle_customer_id', customerId)
+        .single();
 
-      if (error) {
-        console.error('Failed to mark payment failure:', error);
+      if (!user) {
+        console.error('User not found:', customerId);
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      await supabase
-        .from('webhook_events')
-        .insert({ 
-          event_id: eventId, 
-          event_type: eventType,
-          processed_at: new Date().toISOString()
-        });
+      const { data: result, error: rpcError } = await supabase.rpc(
+        'process_subscription_event',
+        {
+          p_user_id: user.id,
+          p_event_id: eventId,
+          p_event_type: eventType,
+          p_subscription_id: '',
+          p_plan: 'free',
+          p_message_limit: 50,
+          p_status: 'payment_failed'
+        }
+      );
 
-      console.log(`Payment failed, downgraded to free: ${customerId}`);
+      if (rpcError) {
+        console.error('RPC failed:', rpcError);
+      }
+
+      console.log('Payment failed:', result);
     }
 
     return NextResponse.json({ received: true });
