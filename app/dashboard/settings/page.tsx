@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
   const [notice, setNotice] = useState<{
     type: "success" | "error";
     text: string;
@@ -121,12 +122,17 @@ export default function SettingsPage() {
   };
 
   const deleteAccount = async () => {
-    setShowDeleteModal(false);
-    const res = await fetch("/api/settings", { method: "DELETE" });
+    const res = await fetch("/api/settings", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: deletePassword }),
+    });
     const data = await res.json();
     if (!res.ok)
       return showNotice("error", data.error || "Failed to delete account");
-    await createClient().auth.signOut();
+    setShowDeleteModal(false);
+    // The user no longer exists server-side, so only clear the local session
+    await createClient().auth.signOut({ scope: "local" });
     router.replace("/");
   };
 
@@ -545,6 +551,17 @@ export default function SettingsPage() {
               This permanently deletes your account, all chatbots, knowledge and
               conversation history. This cannot be undone.
             </p>
+            <label htmlFor="delete-password" className="block text-sm font-medium text-gray-700 mb-2">
+              Enter your password to confirm
+            </label>
+            <input
+              id="delete-password"
+              type="password"
+              autoComplete="current-password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              className="w-full px-4 py-2 mb-6 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+            />
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}
@@ -554,6 +571,7 @@ export default function SettingsPage() {
               </button>
               <button
                 onClick={deleteAccount}
+                disabled={!deletePassword}
                 className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors"
               >
                 Delete Account

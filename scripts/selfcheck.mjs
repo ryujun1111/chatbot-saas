@@ -22,7 +22,9 @@ assert.equal(verifyPaddleSignature(body, `ts=${ts};h1=bad;h1=${h1}`, secret), tr
 
 // SSRF guard
 for (const bad of ['http://localhost/', 'http://127.0.0.1/', 'http://10.1.2.3/', 'http://169.254.169.254/latest',
-  'http://192.168.0.1', 'http://[::1]/', 'file:///etc/passwd', 'ftp://example.com', 'not a url', 'http://0.0.0.0']) {
+  'http://192.168.0.1', 'http://[::1]/', 'file:///etc/passwd', 'ftp://example.com', 'not a url', 'http://0.0.0.0',
+  'http://[::ffff:127.0.0.1]/', 'http://[::ffff:a9fe:a9fe]/', 'http://[fd00::1]/', 'http://0x7f000001/', 'http://2130706433/',
+  'http://example.com:22/']) {
   await assert.rejects(assertPublicUrl(bad), `should reject ${bad}`);
 }
 assert.equal((await assertPublicUrl('https://example.com/a#frag')).toString(), 'https://example.com/a');

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getAuthUser } from "@/lib/supabase/server";
 import { splitTextIntoChunks, createEmbeddings } from "@/lib/ai-client";
-import { crawlSite } from "@/lib/crawler";
+import { crawlSite, UserError } from "@/lib/crawler";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { detectFileType, extractText, MAX_FILE_BYTES } from "@/lib/file-parser";
 
 // Knowledge base API. Each `documents` row is one embedded chunk; rows sharing a source_id
@@ -52,14 +53,14 @@ async function storeSources(
       content,
     }));
   });
-  if (rows.length === 0) throw new Error("No readable text found");
+  if (rows.length === 0) throw new UserError("No readable text found");
 
   const { count } = await supabase
     .from("documents")
     .select("id", { count: "exact", head: true })
     .eq("chatbot_id", chatbotId);
   if ((count ?? 0) + rows.length > MAX_CHUNKS_PER_CHATBOT) {
-    throw new Error(
+    throw new UserError(
       "Knowledge base is full for this chatbot. Delete some sources first.",
     );
   }
@@ -68,7 +69,9 @@ async function storeSources(
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100);
     const embeddings = await createEmbeddings(batch.map((r) => r.content));
-    const { error } = await supabase
+    // Insert with the service role: users have no direct INSERT policy (keeps the chunk cap enforceable).
+    // Ownership of chatbotId was verified by the caller before this point.
+    const { error } = await supabaseAdmin
       .from("documents")
       .insert(batch.map((r, j) => ({ ...r, embedding: embeddings[j] })));
     if (error) throw new Error(`Failed to save knowledge: ${error.message}`);
@@ -148,6 +151,13 @@ export async function POST(request: NextRequest) {
         "multipart/form-data",
       )
     ) {
+      // Reject oversized uploads before buffering the whole body
+      if (Number(request.headers.get("content-length") || 0) > MAX_FILE_BYTES + 1024 * 1024) {
+        return NextResponse.json(
+          { success: false, error: "File must be 10MB or smaller" },
+          { status: 413 },
+        );
+      }
       const form = await request.formData();
       const chatbotId = form.get("chatbot_id");
       const file = form.get("file");
@@ -271,8 +281,11 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Document upload error:", error);
+    // Only validation messages are shown to users; internal errors stay in the logs
     const message =
-      error instanceof Error ? error.message : "Failed to add document";
+      error instanceof UserError
+        ? error.message
+        : "Could not process this content. Please try again or use a different source.";
     return NextResponse.json(
       { success: false, error: message },
       { status: 400 },

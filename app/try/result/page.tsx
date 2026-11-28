@@ -8,6 +8,7 @@ interface CrawlResult {
   title: string;
   pages: number;
   content: string;
+  sig: string;
 }
 
 interface Message {
@@ -67,6 +68,7 @@ export default function ResultPage() {
           action: "chat",
           title: crawlResult.title,
           content: crawlResult.content,
+          sig: crawlResult.sig,
           message: question,
         }),
       });

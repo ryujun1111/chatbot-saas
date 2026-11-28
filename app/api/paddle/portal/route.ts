@@ -23,18 +23,38 @@ export async function POST() {
     );
   }
 
+  // Same switch Paddle.js uses, so checkout and portal always talk to the same environment
   const apiBase =
-    process.env.PADDLE_ENVIRONMENT === "production"
+    process.env.NEXT_PUBLIC_PADDLE_ENV === "production"
       ? "https://api.paddle.com"
       : "https://sandbox-api.paddle.com";
+  const headers = {
+    Authorization: `Bearer ${process.env.PADDLE_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  // The customer id was linked via a browser-supplied checkout, so confirm it is really this user's
+  const customerRes = await fetch(
+    `${apiBase}/customers/${encodeURIComponent(profile.paddle_customer_id)}`,
+    { headers },
+  );
+  const customer = await customerRes.json().catch(() => ({}));
+  if (
+    !customerRes.ok ||
+    customer?.data?.email?.toLowerCase() !== user.email?.toLowerCase()
+  ) {
+    console.error("Paddle portal: customer check failed", customerRes.status);
+    return NextResponse.json(
+      { error: "Billing portal is unavailable for this account. Please contact support." },
+      { status: 403 },
+    );
+  }
+
   const res = await fetch(
     `${apiBase}/customers/${encodeURIComponent(profile.paddle_customer_id)}/portal-sessions`,
     {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.PADDLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(
         profile.paddle_subscription_id
           ? { subscription_ids: [profile.paddle_subscription_id] }

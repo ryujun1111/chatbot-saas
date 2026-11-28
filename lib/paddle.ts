@@ -14,7 +14,7 @@ export function verifyPaddleSignature(
   if (!ts || signatures.length === 0) return false;
 
   // Reject replays older than 5 minutes
-  if (Math.abs(nowMs - Number(ts) * 1000) > 5 * 60 * 1000) return false;
+  if (!Number.isFinite(Number(ts)) || Math.abs(nowMs - Number(ts) * 1000) > 5 * 60 * 1000) return false;
 
   const expected = crypto
     .createHmac("sha256", secret)

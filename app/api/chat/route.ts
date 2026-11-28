@@ -6,8 +6,9 @@ import {
   type ChatMessage,
 } from "@/lib/ai-client";
 import {
-  checkChatRateLimit,
-  recordMessage,
+  reserveChatMessage,
+  completeMessage,
+  release,
   getClientIP,
 } from "@/lib/rate-limit";
 import { corsJson, corsPreflight } from "@/lib/cors";
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
 // POST /api/chat → RAG answer
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
+  let reservationId: string | null = null;
   try {
     const body = await request.json().catch(() => null);
     const chatbotId = body?.chatbotId;
@@ -77,12 +79,7 @@ export async function POST(request: NextRequest) {
           }))
       : [];
 
-    // 2. Abuse protection before any paid API call
-    const ip = getClientIP(request);
-    const limit = await checkChatRateLimit(sessionId, ip);
-    if (!limit.allowed) return corsJson({ error: limit.reason }, 429);
-
-    // 3. Chatbot must exist and be active
+    // 2. Chatbot must exist and be active
     const { data: chatbot } = await supabaseAdmin
       .from("chatbots")
       .select("user_id, name, model, temperature, max_tokens, status")
@@ -91,6 +88,12 @@ export async function POST(request: NextRequest) {
     if (!chatbot) return corsJson({ error: "Chatbot not found" }, 404);
     if (chatbot.status !== "active")
       return corsJson({ error: "This chatbot is currently offline." }, 403);
+
+    // 3. Abuse protection before any paid API call (reserve-then-count, race-safe)
+    const ip = getClientIP(request);
+    const slot = await reserveChatMessage(sessionId, chatbotId, ip, message);
+    if (!slot.ok) return corsJson({ error: slot.reason }, slot.status);
+    reservationId = slot.id;
 
     // 4. Owner's monthly plan quota (atomic check + increment)
     const { data: usage, error: usageError } = await supabaseAdmin.rpc(
@@ -102,12 +105,14 @@ export async function POST(request: NextRequest) {
     const quota = Array.isArray(usage) ? usage[0] : usage;
     if (usageError) {
       console.error("Usage check failed:", usageError);
+      await release(reservationId);
       return corsJson(
         { error: "Service temporarily unavailable. Please try again." },
         503,
       );
     }
     if (!quota?.can_use) {
+      await release(reservationId);
       return corsJson(
         {
           error:
@@ -130,6 +135,7 @@ export async function POST(request: NextRequest) {
     );
     if (searchError) {
       console.error("Vector search error:", searchError);
+      await release(reservationId);
       return corsJson(
         { error: "Service temporarily unavailable. Please try again." },
         503,
@@ -164,19 +170,13 @@ ${context || "(no relevant information found)"}`,
       ],
     });
 
-    // 7. Log for rate limiting, conversation history and analytics
-    await recordMessage({
-      sessionId,
-      chatbotId,
-      ip,
-      question: message,
-      answer,
-      responseMs: Date.now() - startedAt,
-    });
+    // 7. Store the answer on the reserved row (conversation history + analytics)
+    await completeMessage(reservationId, answer, Date.now() - startedAt);
 
     return corsJson({ answer, sources });
   } catch (error) {
     console.error("Chat API error:", error);
+    if (reservationId) await release(reservationId);
     return corsJson(
       { error: "Failed to generate a response. Please try again." },
       500,

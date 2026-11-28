@@ -9,7 +9,16 @@ import { createClient } from "@/lib/supabase/client";
 // Only allow same-site relative redirects after login (prevents open redirects)
 function safeNext(): string {
   const next = new URLSearchParams(window.location.search).get("next") || "";
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  // Reject protocol-relative tricks like "//evil.com", "/\evil.com" or "/%09/evil.com"
+  if (!next.startsWith("/") || /[\\\s]/.test(next)) return "/dashboard";
+  try {
+    const url = new URL(next, window.location.origin);
+    return url.origin === window.location.origin
+      ? url.pathname + url.search
+      : "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
 }
 
 export default function LoginPage() {

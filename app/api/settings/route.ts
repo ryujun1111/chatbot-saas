@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getAuthUser } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getPlan } from "@/lib/plans";
@@ -53,13 +54,26 @@ export async function GET() {
 }
 
 // DELETE: permanently delete the account. Chatbots, knowledge and logs cascade-delete.
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const { user } = await getAuthUser();
   if (!user)
     return NextResponse.json(
       { error: "Authentication required" },
       { status: 401 },
     );
+
+  // Re-authenticate: a hijacked or left-open session alone must not be able to delete the account
+  const { password } = await request.json().catch(() => ({}));
+  const verifier = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { error: authError } = await verifier.auth.signInWithPassword({
+    email: user.email!,
+    password: typeof password === "string" ? password : "",
+  });
+  if (authError) {
+    return NextResponse.json({ error: "Password is incorrect" }, { status: 403 });
+  }
 
   const { data: profile } = await supabaseAdmin
     .from("users")

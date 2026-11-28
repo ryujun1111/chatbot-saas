@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { reserveSignup, release, getClientIP } from "@/lib/rate-limit";
 
 const signupSchema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(100),
@@ -28,6 +29,10 @@ export async function POST(request: NextRequest) {
   }
   const { name, email, password } = parsed.data;
 
+  // Throttle automated account creation (5 per IP per day)
+  const slot = await reserveSignup(getClientIP(request));
+  if (!slot.ok) return NextResponse.json({ error: slot.reason }, { status: slot.status });
+
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
@@ -36,6 +41,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
+    await release(slot.id);
     const exists = /already|registered|exists/i.test(error.message);
     if (!exists) console.error("Signup error:", error.message);
     return NextResponse.json(

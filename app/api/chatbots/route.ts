@@ -67,7 +67,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: chatbot, error } = await supabase
+  // Service-role insert: users have no direct INSERT policy, so the plan limit above can't be bypassed via REST
+  const { data: chatbot, error } = await supabaseAdmin
     .from("chatbots")
     .insert({
       user_id: user.id,

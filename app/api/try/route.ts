@@ -1,26 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
-import { crawlSite } from "@/lib/crawler";
+import crypto from "crypto";
+import { crawlSite, UserError } from "@/lib/crawler";
 import { createChatCompletion } from "@/lib/ai-client";
 import {
-  checkDemoRateLimit,
-  recordMessage,
+  reserveDemo,
+  completeMessage,
+  release,
   getClientIP,
 } from "@/lib/rate-limit";
 
-// Public "Try it free" demo (no signup). Nothing is stored except the rate-limit log.
-//   { action: 'crawl', url }                         → reads up to 3 pages of the site
-//   { action: 'chat', url, title, content, message }  → answers from that content (10 msgs/IP/day)
+// Public "Try it free" demo (no signup). Nothing is stored except the abuse-control log.
+//   { action: 'crawl', url }                              → reads up to 3 pages, returns content + signature
+//   { action: 'chat', title, content, sig, message }      → answers only from server-signed content
+// Crawls and questions share a budget of 15 per IP per day.
 export const maxDuration = 60;
 
 const MAX_CONTEXT = 12000;
 
+// Signature proves the content came from our crawler, so the endpoint can't be used as a free
+// general-purpose LLM with arbitrary prompts. Keyed with a server-only secret.
+function sign(title: string, content: string) {
+  return crypto
+    .createHmac(
+      "sha256",
+      process.env.SUPABASE_SERVICE_ROLE_KEY || "missing-secret",
+    )
+    .update(`try-demo:${title}\n${content}`)
+    .digest("hex");
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
+  const ip = getClientIP(request);
+  let reservationId: string | null = null;
 
   try {
     if (body.action === "crawl") {
-      if (typeof body.url !== "string")
+      if (typeof body.url !== "string" || body.url.length > 2000) {
         return NextResponse.json({ error: "URL is required" }, { status: 400 });
+      }
+      const slot = await reserveDemo("demo-crawl", ip, body.url);
+      if (!slot.ok)
+        return NextResponse.json(
+          { error: slot.reason },
+          { status: slot.status },
+        );
+
       const pages = await crawlSite(body.url, 3, 25000);
       if (pages.length === 0) {
         return NextResponse.json(
@@ -31,15 +56,17 @@ export async function POST(request: NextRequest) {
           { status: 422 },
         );
       }
+      const title = pages[0].title.slice(0, 200);
       const content = pages
         .map((p) => `# ${p.title}\n${p.content}`)
         .join("\n\n")
         .slice(0, MAX_CONTEXT);
       return NextResponse.json({
         url: pages[0].url,
-        title: pages[0].title,
+        title,
         pages: pages.length,
         content,
+        sig: sign(title, content),
       });
     }
 
@@ -48,24 +75,33 @@ export async function POST(request: NextRequest) {
         typeof body.message === "string"
           ? body.message.trim().slice(0, 500)
           : "";
-      const content =
-        typeof body.content === "string"
-          ? body.content.slice(0, MAX_CONTEXT)
-          : "";
-      const title =
-        typeof body.title === "string"
-          ? body.title.slice(0, 200)
-          : "this website";
+      const content = typeof body.content === "string" ? body.content : "";
+      const title = typeof body.title === "string" ? body.title : "";
+      const sig = typeof body.sig === "string" ? body.sig : "";
       if (!message || !content)
         return NextResponse.json(
           { error: "Message and content are required" },
           { status: 400 },
         );
 
-      const ip = getClientIP(request);
-      const limit = await checkDemoRateLimit(ip);
-      if (!limit.allowed)
-        return NextResponse.json({ error: limit.reason }, { status: 429 });
+      const expected = sign(title, content);
+      if (
+        sig.length !== expected.length ||
+        !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+      ) {
+        return NextResponse.json(
+          { error: "Demo session expired. Please enter your website again." },
+          { status: 400 },
+        );
+      }
+
+      const slot = await reserveDemo("demo", ip, message);
+      if (!slot.ok)
+        return NextResponse.json(
+          { error: slot.reason },
+          { status: slot.status },
+        );
+      reservationId = slot.id;
 
       const startedAt = Date.now();
       const answer = await createChatCompletion({
@@ -80,30 +116,22 @@ export async function POST(request: NextRequest) {
         ],
       });
 
-      await recordMessage({
-        sessionId: "demo",
-        chatbotId: null,
-        ip,
-        question: message,
-        answer,
-        responseMs: Date.now() - startedAt,
-      });
+      await completeMessage(reservationId, answer, Date.now() - startedAt);
       return NextResponse.json({ answer });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Something went wrong";
-    console.error("Try demo error:", msg);
-    return NextResponse.json(
-      {
-        error:
-          // Crawler errors are written for end users; AI/provider errors are not shown
-          body.action === "crawl" && msg.length < 120
-            ? msg
-            : "Something went wrong. Please try again.",
-      },
-      { status: 400 },
+    if (reservationId) await release(reservationId);
+    console.error(
+      "Try demo error:",
+      error instanceof Error ? error.message : error,
     );
+    // Only crawler validation messages are meant for end users
+    const message =
+      error instanceof UserError
+        ? error.message
+        : "Something went wrong. Please try again.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

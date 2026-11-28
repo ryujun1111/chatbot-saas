@@ -242,7 +242,7 @@ export default function DocumentsPage() {
         <div className="bg-white rounded-xl shadow-md p-6 mb-8">
           <h2 className="text-xl font-bold mb-4">Add knowledge</h2>
 
-          <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
+          <div className="flex flex-wrap gap-x-2 mb-6 border-b border-gray-200">
             <button
               onClick={() => setUploadType("url")}
               className={tabClass("url")}
