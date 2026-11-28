@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { openaiClient, OPENAI_EMBEDDING_MODEL, createChatCompletion } from '@/lib/ai-client'
+import { checkSessionRateLimit, checkIPRateLimit, recordMessage, getClientIP } from '@/lib/rate-limit'
 
 // Service Role client for bypassing RLS
 const supabaseAdmin = createClient(
@@ -27,64 +28,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Rate limiting FIRST (before any usage increment)
-    const rateLimitKey = sessionId || request.headers.get('x-forwarded-for') || 'unknown';
+    // 1. Rate limiting FIRST (session and IP-based)
+    const clientIP = getClientIP(request);
     
-    if (rateLimitKey) {
-      const { data: rateLimitData, error: rateLimitError } = await supabaseAdmin
-        .from('rate_limits')
-        .select('count, reset_at')
-        .eq('session_id', rateLimitKey)
-        .single()
-
-      const now = Date.now()
-      
-      if (!rateLimitError && rateLimitData) {
-        const resetTime = new Date(rateLimitData.reset_at).getTime()
-        
-        if (resetTime > now) {
-          if (rateLimitData.count >= 20) {
-            return NextResponse.json(
-              { error: 'Too many requests. Please try again later.' },
-              { status: 429 }
-            )
-          }
-          
-          const { error: updateError } = await supabaseAdmin
-            .from('rate_limits')
-            .update({ count: rateLimitData.count + 1 })
-            .eq('session_id', rateLimitKey)
-          
-          if (updateError) {
-            console.error('Rate limit update failed:', updateError)
-            return NextResponse.json(
-              { error: 'Rate limit service unavailable' },
-              { status: 503 }
-            )
-          }
-        } else {
-          await supabaseAdmin
-            .from('rate_limits')
-            .update({ count: 1, reset_at: new Date(now + 60000).toISOString() })
-            .eq('session_id', rateLimitKey)
-        }
-      } else if (!rateLimitData) {
-        const { error: insertError } = await supabaseAdmin
-          .from('rate_limits')
-          .insert({ 
-            session_id: rateLimitKey, 
-            count: 1, 
-            reset_at: new Date(now + 60000).toISOString() 
-          })
-        
-        if (insertError) {
-          console.error('Rate limit insert failed:', insertError)
-          return NextResponse.json(
-            { error: 'Rate limit service unavailable' },
-            { status: 503 }
-          )
-        }
+    // Check session-based rate limit (50 messages per 24 hours)
+    if (sessionId) {
+      const sessionLimit = await checkSessionRateLimit(sessionId, 50);
+      if (!sessionLimit.allowed) {
+        return NextResponse.json(
+          { 
+            error: sessionLimit.reason || 'Session message limit exceeded',
+            remaining: sessionLimit.remaining,
+            resetAt: sessionLimit.resetAt
+          },
+          { status: 429 }
+        );
       }
+    }
+    
+    // Check IP-based rate limit (100 messages per hour)
+    const ipLimit = await checkIPRateLimit(clientIP, 100);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { 
+          error: ipLimit.reason || 'Too many requests from this IP',
+          remaining: ipLimit.remaining,
+          resetAt: ipLimit.resetAt
+        },
+        { status: 429 }
+      );
     }
 
     // 2. Get chatbot and owner (Service Role bypasses RLS)
@@ -196,7 +168,12 @@ ${context}`,
       maxTokens: 500,
     })
 
-    // 8. Return response
+    // 8. Record message for rate limiting
+    if (sessionId) {
+      await recordMessage(sessionId, chatbotId, clientIP);
+    }
+
+    // 9. Return response
     return NextResponse.json({
       answer,
       sources: sources.filter((s: string) => s),
