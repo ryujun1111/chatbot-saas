@@ -1,210 +1,153 @@
+/**
+ * ChatBot AI Widget - Production Ready
+ * XSS Protected, Session Management, Rate Limit
+ */
 (function() {
   'use strict';
+  if (window.ChatBotWidget) return;
 
-  // 위젯 설정 가져오기
-  const script = document.currentScript;
-  const chatbotId = script.getAttribute('data-chatbot-id');
-  const primaryColor = script.getAttribute('data-color') || '#3B82F6';
-  const position = script.getAttribute('data-position') || 'bottom-right'; // bottom-right, bottom-left
-  
-  if (!chatbotId) {
-    console.error('ChatBot Widget: data-chatbot-id is required');
-    return;
-  }
+  const ChatBotWidget = {
+    config: {
+      chatbotId: null,
+      primaryColor: '#667eea',
+      apiEndpoint: 'https://chatbot-saas-tau-sandy.vercel.app',
+      maxMessagesPerSession: 50,
+    },
+    state: { isOpen: false, sessionId: null, messageCount: 0, isLoading: false },
+    elements: {},
 
-  // 스타일 주입
-  const style = document.createElement('style');
-  style.textContent = `
-    .chatbot-widget-container {
-      position: fixed;
-      z-index: 999999;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-    }
-    
-    .chatbot-widget-container.bottom-right {
-      bottom: 20px;
-      right: 20px;
-    }
-    
-    .chatbot-widget-container.bottom-left {
-      bottom: 20px;
-      left: 20px;
-    }
-    
-    .chatbot-toggle-button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: ${primaryColor};
-      border: none;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-      color: white;
-      font-size: 24px;
-    }
-    
-    .chatbot-toggle-button:hover {
-      transform: scale(1.1);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-    }
-    
-    .chatbot-toggle-button:active {
-      transform: scale(0.95);
-    }
-    
-    .chatbot-window {
-      position: fixed;
-      z-index: 999998;
-      width: 380px;
-      height: 600px;
-      max-height: calc(100vh - 100px);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-      overflow: hidden;
-      background: white;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      transform-origin: bottom right;
-    }
-    
-    .chatbot-window.bottom-right {
-      bottom: 100px;
-      right: 20px;
-    }
-    
-    .chatbot-window.bottom-left {
-      bottom: 100px;
-      left: 20px;
-      transform-origin: bottom left;
-    }
-    
-    .chatbot-window.hidden {
-      opacity: 0;
-      transform: scale(0.8);
-      pointer-events: none;
-    }
-    
-    .chatbot-window.visible {
-      opacity: 1;
-      transform: scale(1);
-    }
-    
-    .chatbot-iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-    
-    .chatbot-close-button {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.1);
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.2s;
-      z-index: 10;
-      color: white;
-      font-size: 18px;
-    }
-    
-    .chatbot-close-button:hover {
-      background: rgba(0, 0, 0, 0.2);
-    }
-    
-    @media (max-width: 480px) {
-      .chatbot-window {
-        width: calc(100vw - 20px);
-        height: calc(100vh - 20px);
-        bottom: 10px !important;
-        right: 10px !important;
-        left: 10px !important;
-        border-radius: 12px;
+    init: function(options) {
+      if (!options?.chatbotId) {
+        console.error('[ChatBot] chatbotId required');
+        return;
       }
-      
-      .chatbot-toggle-button {
-        width: 56px;
-        height: 56px;
-        font-size: 22px;
+      Object.assign(this.config, options);
+      this.state.sessionId = this.getSessionId();
+      this.createWidget();
+      this.attachEventListeners();
+    },
+
+    getSessionId: function() {
+      const key = `chatbot_session_${this.config.chatbotId}`;
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem(key, id);
+      }
+      return id;
+    },
+
+    createWidget: function() {
+      const btn = document.createElement('button');
+      btn.id = 'cb-btn';
+      btn.textContent = '💬';
+      btn.style.cssText = 'position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:30px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;font-size:28px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:999999;';
+      this.elements.button = btn;
+
+      const win = document.createElement('div');
+      win.id = 'cb-win';
+      win.style.cssText = 'position:fixed;bottom:90px;right:20px;width:380px;height:600px;background:white;border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,0.3);z-index:999999;display:none;flex-direction:column;overflow:hidden;';
+      win.innerHTML = `<div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px;display:flex;justify-content:space-between;align-items:center;"><div><h3 style="margin:0;font-size:18px;">💬 ChatBot AI</h3><p style="margin:5px 0 0;font-size:12px;opacity:0.9;">Ask me anything!</p></div><button id="cb-close" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;">×</button></div><div id="cb-msgs" style="flex:1;overflow-y:auto;padding:20px;background:#f8f9fa;"></div><div style="padding:20px;background:white;border-top:1px solid #eee;"><div style="display:flex;gap:10px;"><input id="cb-input" type="text" placeholder="Type..." maxlength="500" style="flex:1;padding:12px;border:1px solid #ddd;border-radius:25px;outline:none;" /><button id="cb-send" style="background:#667eea;color:white;border:none;padding:12px 24px;border-radius:25px;cursor:pointer;font-weight:bold;">Send</button></div></div>`;
+      this.elements.window = win;
+
+      document.body.append(btn, win);
+      this.elements.msgs = win.querySelector('#cb-msgs');
+      this.elements.input = win.querySelector('#cb-input');
+      this.addBotMessage('Hello! How can I help you? 👋');
+    },
+
+    attachEventListeners: function() {
+      this.elements.button.onclick = () => {
+        this.elements.window.style.display = this.state.isOpen ? 'none' : 'flex';
+        this.state.isOpen = !this.state.isOpen;
+        if (this.state.isOpen) this.elements.input.focus();
+      };
+      this.elements.window.querySelector('#cb-close').onclick = () => {
+        this.elements.window.style.display = 'none';
+        this.state.isOpen = false;
+      };
+      this.elements.window.querySelector('#cb-send').onclick = () => this.sendMessage();
+      this.elements.input.onkeypress = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.sendMessage();
+        }
+      };
+    },
+
+    sendMessage: function() {
+      if (this.state.isLoading) return;
+      const msg = this.elements.input.value.trim();
+      if (!msg) return;
+      if (this.state.messageCount >= this.config.maxMessagesPerSession) {
+        this.addBotMessage('Maximum messages reached. Refresh to continue.');
+        return;
+      }
+      this.addUserMessage(msg);
+      this.elements.input.value = '';
+      this.state.messageCount++;
+      this.callAPI(msg);
+    },
+
+    addUserMessage: function(msg) {
+      const div = document.createElement('div');
+      div.style.cssText = 'background:#667eea;color:white;padding:15px;border-radius:15px;margin-bottom:10px;text-align:right;word-wrap:break-word;';
+      const strong = document.createElement('strong');
+      strong.textContent = 'You: ';
+      const span = document.createElement('span');
+      span.textContent = msg; // XSS safe
+      div.append(strong, span);
+      this.elements.msgs.appendChild(div);
+      this.elements.msgs.scrollTop = this.elements.msgs.scrollHeight;
+    },
+
+    addBotMessage: function(msg) {
+      const div = document.createElement('div');
+      div.style.cssText = 'background:white;padding:15px;border-radius:15px;margin-bottom:10px;word-wrap:break-word;';
+      const strong = document.createElement('strong');
+      strong.textContent = 'Bot: ';
+      const span = document.createElement('span');
+      span.textContent = msg; // XSS safe
+      div.append(strong, span);
+      this.elements.msgs.appendChild(div);
+      this.elements.msgs.scrollTop = this.elements.msgs.scrollHeight;
+    },
+
+    callAPI: async function(msg) {
+      this.state.isLoading = true;
+      const loading = document.createElement('div');
+      loading.id = 'cb-loading';
+      loading.style.cssText = 'background:white;padding:15px;border-radius:15px;margin-bottom:10px;';
+      loading.innerHTML = '<strong>Bot: </strong><span>Thinking...</span>';
+      this.elements.msgs.appendChild(loading);
+      this.elements.msgs.scrollTop = this.elements.msgs.scrollHeight;
+
+      try {
+        const res = await fetch(`${this.config.apiEndpoint}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatbotId: this.config.chatbotId,
+            message: msg,
+            sessionId: this.state.sessionId
+          })
+        });
+        const data = await res.json();
+        loading.remove();
+        if (res.ok && data.answer) {
+          this.addBotMessage(data.answer);
+        } else {
+          this.addBotMessage('Sorry, an error occurred. Please try again.');
+        }
+      } catch (err) {
+        console.error('[ChatBot] API Error:', err);
+        loading.remove();
+        this.addBotMessage('Connection error. Please try again.');
+      } finally {
+        this.state.isLoading = false;
       }
     }
-  `;
-  document.head.appendChild(style);
+  };
 
-  // 위젯 컨테이너 생성
-  const container = document.createElement('div');
-  container.className = `chatbot-widget-container ${position}`;
-  
-  // 토글 버튼 생성
-  const toggleButton = document.createElement('button');
-  toggleButton.className = 'chatbot-toggle-button';
-  toggleButton.innerHTML = '💬';
-  toggleButton.setAttribute('aria-label', 'Open chat');
-  
-  // 채팅 윈도우 생성
-  const chatWindow = document.createElement('div');
-  chatWindow.className = `chatbot-window ${position} hidden`;
-  
-  // iframe 생성
-  const iframe = document.createElement('iframe');
-  iframe.className = 'chatbot-iframe';
-  const baseUrl = script.src.replace('/widget.js', '');
-  iframe.src = `${baseUrl}/widget/${chatbotId}?color=${encodeURIComponent(primaryColor)}`;
-  iframe.setAttribute('title', 'Chatbot');
-  iframe.allow = 'clipboard-write';
-  
-  chatWindow.appendChild(iframe);
-  
-  // DOM에 추가
-  container.appendChild(toggleButton);
-  document.body.appendChild(container);
-  document.body.appendChild(chatWindow);
-  
-  // 상태 관리
-  let isOpen = false;
-  
-  // 토글 함수
-  function toggleChat() {
-    isOpen = !isOpen;
-    
-    if (isOpen) {
-      chatWindow.classList.remove('hidden');
-      chatWindow.classList.add('visible');
-      toggleButton.innerHTML = '✕';
-      toggleButton.setAttribute('aria-label', 'Close chat');
-    } else {
-      chatWindow.classList.remove('visible');
-      chatWindow.classList.add('hidden');
-      toggleButton.innerHTML = '💬';
-      toggleButton.setAttribute('aria-label', 'Open chat');
-    }
-  }
-  
-  // 이벤트 리스너
-  toggleButton.addEventListener('click', toggleChat);
-  
-  // ESC 키로 닫기
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && isOpen) {
-      toggleChat();
-    }
-  });
-  
-  // iframe에서 메시지 수신 (필요시 확장)
-  window.addEventListener('message', function(event) {
-    if (event.data.type === 'chatbot-close') {
-      if (isOpen) toggleChat();
-    }
-  });
-  
-  console.log('ChatBot Widget loaded successfully');
+  window.ChatBotWidget = ChatBotWidget;
 })();

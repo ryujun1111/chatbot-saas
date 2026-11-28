@@ -1,20 +1,18 @@
 import OpenAI from 'openai';
 
 // ============================================
-// OpenRouter 클라이언트 (DeepSeek R1)
+// OpenRouter 클라이언트 (선택 사항)
 // ============================================
-if (!process.env.OPENROUTER_API_KEY) {
-  throw new Error('OPENROUTER_API_KEY is not set in environment variables');
-}
-
-export const deepseekClient = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    'X-Title': 'Chatbot SaaS',
-  },
-});
+export const deepseekClient = process.env.OPENROUTER_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.OPENROUTER_API_KEY,
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'Chatbot SaaS',
+      },
+    })
+  : null;
 
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek/deepseek-chat';
 
@@ -114,7 +112,7 @@ export interface ChatCompletionOptions {
 }
 
 /**
- * OpenAI GPT-4o-mini로 채팅 완성 생성 (임시: OpenRouter 크레딧 문제로 대체)
+ * AI 채팅 완성 생성 (OpenAI GPT-4o-mini)
  * @param options 채팅 옵션
  * @returns 생성된 응답 텍스트
  */
@@ -122,7 +120,7 @@ export async function createChatCompletion(options: ChatCompletionOptions): Prom
   try {
     const { messages, temperature = 0.7, maxTokens } = options;
 
-    // OpenAI GPT-4o-mini 사용 (임시)
+    // OpenAI GPT-4o-mini 사용
     const response = await openaiClient.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: messages as any[],
